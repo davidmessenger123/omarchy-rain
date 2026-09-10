@@ -38,7 +38,7 @@ and the wallpaper untouched.
 | `Dust` | Barely-moving motes drifting through a faint diagonal light shaft |
 | `Fireflies` | Warm-green points of light wandering and blinking at dusk |
 | `Leaves` | Autumn leaves tumbling down through warm golden light |
-| `Aurora` | *(coming)* undulating northern-lights ribbons |
+| `Aurora` | Undulating northern-lights curtains over a starry night sky |
 
 ## Settings
 

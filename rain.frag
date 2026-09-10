@@ -395,6 +395,57 @@ void main()
         return;
     }
 
+    // Aurora: a deep night sky with a single undulating curtain of light
+    // hanging over the horizon, broken into vertical folds and a bright rim
+    // like a real aurora, plus a few faint stars overhead. Intensity lifts the
+    // curtain's brightness (and its reach of green-to-pink light).
+    if (uEffect > 5.5 && uEffect < 6.5) {
+        float i = 1.0 + (uIntensity - 1.0) * 0.45;
+        vec2 n = p / uRes;
+
+        // Faint twinkling stars scattered across the night sky.
+        vec3 col = vec3(0.10, 0.13, 0.21) * 0.30;
+        {
+            vec2 sc2 = p / vec2(140.0, 140.0);
+            vec2 sg2 = floor(sc2);
+            vec2 sf2 = fract(sc2);
+            vec2 rs2 = hash2(sg2 + vec2(51.0, 9.3));
+            float has = step(0.965, rs2.x);
+            vec2 off2 = (sf2 - 0.5) * 140.0;
+            float sdot = 1.0 - smoothstep(0.0, 1.6, length(off2));
+            float tw = 0.5 + 0.5 * vnoise(vec2(sg2.x * 0.7, flow * 0.15 + sg2.y * 0.9));
+            col += vec3(0.9, 0.94, 1.0) * (has * sdot * tw) * 0.7;
+        }
+
+        // Curtain: an undulating lower edge, vertical folds, and a bright rim
+        // along the edge where the light pools brightest.
+        float x = n.x * 6.2831;
+        float edge = 0.42
+                   + 0.055 * sin(x * 1.0 + flow * 0.5)
+                   + 0.030 * sin(x * 3.4 + flow * 0.32 + 2.1)
+                   + 0.018 * sin(x * 8.6 + flow * 0.18 + 4.7);
+        float y = 1.0 - n.y;
+        float d = y - edge;
+        float fade = exp(-max(d, 0.0) * 9.0) * smoothstep(-0.05, 0.0, d);
+        float w = sin(x * 3.0 + flow * 0.4) * 2.0 + sin(x * 7.0 + flow * 0.55) * 1.3;
+        float folds = 0.7 + 0.3 * sin(x * 26.0 + w + flow * 0.9);
+        float rim = exp(-abs(d) * 26.0) * 0.5;
+        float band = clamp(fade * folds + rim, 0.0, 1.3);
+
+        // Color climbs green near the edge to pink higher overhead, with a
+        // slow horizontal sway in the green/teal mix.
+        vec3 green = vec3(0.35, 0.85, 0.45);
+        vec3 teal = vec3(0.25, 0.85, 0.70);
+        vec3 pink = vec3(0.85, 0.50, 0.90);
+        vec3 curtain = mix(green, teal, 0.4 + 0.4 * sin(x * 2.0 + flow * 0.35));
+        curtain = mix(curtain, pink, smoothstep(0.40, 0.85, 1.0 - n.y));
+        col += curtain * (band * 0.55 * i);
+
+        float alpha = clamp(0.30 + band * 0.6 * (0.55 + 0.35 * i), 0.0, 1.0);
+        fragColor = vec4(col, alpha * qt_Opacity);
+        return;
+    }
+
     // Effects not yet implemented render nothing.
     fragColor = vec4(0.0, 0.0, 0.0, 0.0);
 }
