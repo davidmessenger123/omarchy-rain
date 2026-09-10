@@ -33,7 +33,7 @@ and the wallpaper untouched.
 | Key | Effect |
 | --- | --- |
 | `Rain` | Falling streaks in three depth layers over a wet-window dim, with optional lightning bolts |
-| `Snow` | *(coming)* drifting, tumbling flakes |
+| `Snow` | Drifting, tumbling flakes in three depth layers with wind sway |
 | `Ripples` | *(coming)* rain with expanding puddle rings |
 | `Dust` | *(coming)* slow floating dust motes |
 | `Fireflies` | *(coming)* tiny wandering points of light |

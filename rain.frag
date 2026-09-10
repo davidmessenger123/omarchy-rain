@@ -29,6 +29,40 @@ vec2 hash2(vec2 p)
     return vec2(hash(p), hash(p + vec2(17.7, 3.7)));
 }
 
+// Smooth value noise (hash-based, bilinear interpolation) — used for the snow
+// drift/tumble so flakes sway gently instead of marching in straight lines.
+float vnoise(vec2 q)
+{
+    vec2 i = floor(q);
+    vec2 f = fract(q);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+               mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+// One snow layer in pixel space. Every cell of `cell` pixels carries a single
+// soft round flake that falls at its own speed and sways sideways with a
+// gentle breeze; a wobble in its size keeps near flakes from feeling static.
+// `drift` is a horizontal offset in pixels added on top so the whole layer
+// streams with the wind.
+float snowLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drift)
+{
+    vec2 gp = p + vec2(drift, 0.0);
+    vec2 sc = gp / cell;
+    vec2 sg = floor(sc);
+    vec2 sf = fract(sc);
+    vec2 rs = hash2(sg + seed);
+    float fy = fract(rs.y * 7.31 + flow * (0.22 + 0.78 * rs.x));
+    float fx = 0.5 + (rs.x - 0.5) * 0.55
+             + 0.22 * sin(flow * (0.5 + 0.7 * rs.y) + rs.x * 7.2);
+    float sway = 0.75 + 0.5 * vnoise(vec2(sg.x * 0.7 + seed.x, flow * 0.35 + seed.y));
+    vec2 flake = vec2(fx, fy) * cell;
+    float dist = length(p - flake) / max(0.5 * size * sway, 1.0);
+    float a = 1.0 - smoothstep(0.4, 1.15, dist);
+    a *= 0.55 + 0.45 * vnoise(vec2(rs.x * 3.3, flow * 1.4));
+    return max(a, 0.0);
+}
+
 // One rain layer in pixel space. Every cell of `cell` pixels carries a single
 // streak `th` px wide and up to `cell.y` px long, falling at its own speed,
 // bright at the head and tapering along the tail, wrapping back into the top
@@ -100,56 +134,71 @@ void main()
     float flow = time * uSpeed;
     vec2 p = qt_TexCoord0 * uRes;
 
-    // Effect shell: every implemented effect is its own branch below. Effects
-    // not yet built render nothing (the menu only lists implemented ones, so
-    // this guard is a safety net during development).
-    if (uEffect > 0.5) {
-        fragColor = vec4(0.0, 0.0, 0.0, 0.0);
+    // Effect switch. Each branch owns its output.
+    // Rain: three depth layers of slanted streaks over a wet window dim, with
+    // optional lightning.
+    if (uEffect < 0.5) {
+        // Slight screen-space slant so the rain reads as falling at an angle.
+        p.x += p.y * 0.08;
+
+        // Density (uIntensity 1..3 grows 0.65 -> 1.6 here) tightens the column
+        // spacing so higher intensity packs in visibly more drops; the alpha
+        // also climbs with it for a wetter read.
+        float i = 0.65 + (uIntensity - 1.0) * 0.475;
+        float a1 = rainLayer(p, vec2(20.0 / i, 96.0), 1.5, 1.00, flow, vec2(3.1, 1.7)) * 0.34;
+        float a2 = rainLayer(p, vec2(34.0 / i, 160.0), 1.2, 0.62, flow, vec2(9.4, 2.9)) * 0.19;
+        float a3 = rainLayer(p, vec2(56.0 / i, 240.0), 0.9, 0.36, flow, vec2(5.2, 7.1)) * 0.13;
+
+        float total = clamp(a1 + a2 + a3, 0.0, 1.0);
+
+        // Pale steel-blue streaks; the wet-down look darkens and cools the
+        // wallpaper as the rain builds up.
+        vec3 wet = vec3(0.55, 0.65, 0.85);
+        vec3 col = wet * (0.4 + 1.1 * total);
+
+        // Lightning: a distant-strike cloud glow plus the drawn bolt.
+        float flash = uFlash;
+        col += vec3(0.28, 0.31, 0.38) * flash * 0.6;
+
+        float boltAlpha = 0.0;
+        if (uStrike > 0.001) {
+            vec2 start = vec2(uStrikePos.x * uRes.x, 0.03 * uRes.y);
+            float lenPx = uStrikePos.y * uRes.y * 0.75;
+            float ampPx = 0.03 * uRes.x;
+            float d = lightningBolt(p, start, lenPx, ampPx, uStrikeSeed);
+            float dist = sqrt(max(d, 0.0));
+            float core = smoothstep(1.4, 0.0, dist);
+            float glow = exp(-dist * 0.06) * 0.5;
+            boltAlpha = (core + glow) * uStrike;
+            col += vec3(0.72, 0.82, 1.0) * boltAlpha;
+        }
+
+        // A wet-window dim plus the streaks' own alpha keeps drops visible on
+        // both bright and dark wallpapers. Heavier rain darkens the scene more.
+        float wetness = 0.10 * total + 0.05 * (uIntensity - 1.0);
+        float dim = wetness + 0.10 * flash;
+        float alpha = clamp(dim + total * (0.36 + 0.10 * uIntensity), 0.0, 1.0);
+        alpha += clamp(boltAlpha, 0.0, 1.0) * 0.9;
+        alpha *= qt_Opacity;
+
+        fragColor = vec4(col, alpha);
         return;
     }
 
-    // Slight screen-space slant so the rain reads as falling at an angle.
-    p.x += p.y * 0.08;
+    // Snow: three depth layers of drifting flakes over a cool brightening.
+    if (uEffect < 1.5) {
+        float i = 1.0 + (uIntensity - 1.0) * 0.5;
+        float a1 = snowLayer(p, vec2(26.0, 40.0) / i, 2.0, flow, vec2(4.1, 9.3), flow * 6.0) * 0.5;
+        float a2 = snowLayer(p, vec2(48.0, 78.0) / i, 3.4, flow, vec2(8.7, 2.4), flow * 9.0) * 0.8;
+        float a3 = snowLayer(p, vec2(88.0, 150.0) / i, 6.0, flow, vec2(2.2, 6.6), flow * 13.0) * 1.0;
+        float total = clamp(a1 + a2 + a3, 0.0, 1.0);
 
-    // Density (uIntensity 1..3 grows 0.65 -> 1.6 here) tightens the column
-    // spacing so higher intensity packs in visibly more drops; the alpha also
-    // climbs with it for a wetter read.
-    float i = 0.65 + (uIntensity - 1.0) * 0.475;
-    float a1 = rainLayer(p, vec2(20.0 / i, 96.0), 1.5, 1.00, flow, vec2(3.1, 1.7)) * 0.34;
-    float a2 = rainLayer(p, vec2(34.0 / i, 160.0), 1.2, 0.62, flow, vec2(9.4, 2.9)) * 0.19;
-    float a3 = rainLayer(p, vec2(56.0 / i, 240.0), 0.9, 0.36, flow, vec2(5.2, 7.1)) * 0.13;
-
-    float total = clamp(a1 + a2 + a3, 0.0, 1.0);
-
-    // Pale steel-blue streaks; the wet-down look darkens and cools the
-    // wallpaper as the rain builds up.
-    vec3 wet = vec3(0.55, 0.65, 0.85);
-    vec3 col = wet * (0.4 + 1.1 * total);
-
-    // Lightning: a distant-strike cloud glow plus the drawn bolt.
-    float flash = uFlash;
-    col += vec3(0.28, 0.31, 0.38) * flash * 0.6;
-
-    float boltAlpha = 0.0;
-    if (uStrike > 0.001) {
-        vec2 start = vec2(uStrikePos.x * uRes.x, 0.03 * uRes.y);
-        float lenPx = uStrikePos.y * uRes.y * 0.75;
-        float ampPx = 0.03 * uRes.x;
-        float d = lightningBolt(p, start, lenPx, ampPx, uStrikeSeed);
-        float dist = sqrt(max(d, 0.0));
-        float core = smoothstep(1.4, 0.0, dist);
-        float glow = exp(-dist * 0.06) * 0.5;
-        boltAlpha = (core + glow) * uStrike;
-        col += vec3(0.72, 0.82, 1.0) * boltAlpha;
+        vec3 col = vec3(0.80, 0.86, 0.98) * (0.30 + 1.05 * total);
+        float alpha = clamp(total * 0.95 + 0.04 * (uIntensity - 1.0), 0.0, 1.0);
+        fragColor = vec4(col, alpha * qt_Opacity);
+        return;
     }
 
-    // A wet-window dim plus the streaks' own alpha keeps drops visible on both
-    // bright and dark wallpapers. Heavier rain darkens the scene more.
-    float wetness = 0.10 * total + 0.05 * (uIntensity - 1.0);
-    float dim = wetness + 0.10 * flash;
-    float alpha = clamp(dim + total * (0.36 + 0.10 * uIntensity), 0.0, 1.0);
-    alpha += clamp(boltAlpha, 0.0, 1.0) * 0.9;
-    alpha *= qt_Opacity;
-
-    fragColor = vec4(col, alpha);
+    // Effects not yet implemented render nothing.
+    fragColor = vec4(0.0, 0.0, 0.0, 0.0);
 }
