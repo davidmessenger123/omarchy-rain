@@ -32,33 +32,33 @@ BarWidget {
   // Effect catalogue. `effectIds` maps every catalogue key to the shader's
   // uEffect switch; `implementedEffects` lists the ones that actually render
   // and grows as effects ship, so the menu only offers built effects.
-  readonly property var effectKeys: ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Meteors", "Leaves", "Aurora"]
+  readonly property var effectKeys: ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Leaves", "Aurora"]
   readonly property var effectLabels: {
     "Rain": "Rain", "Snow": "Snowfall", "Ripples": "Puddle Ripples",
-    "Dust": "Dust Motes", "Fireflies": "Fireflies", "Meteors": "Meteor Shower",
+    "Dust": "Dust Motes", "Fireflies": "Fireflies",
     "Leaves": "Falling Leaves", "Aurora": "Aurora"
   }
   readonly property var effectIds: {
     "Rain": 0, "Snow": 1, "Ripples": 2, "Dust": 3,
-    "Fireflies": 4, "Meteors": 5, "Leaves": 6, "Aurora": 7
+    "Fireflies": 4, "Leaves": 5, "Aurora": 6
   }
   readonly property var settingsTitles: {
     "Rain": "RAIN SETTINGS", "Snow": "SNOWFALL SETTINGS", "Ripples": "PUDDLE RIPPLE SETTINGS",
-    "Dust": "DUST MOTES SETTINGS", "Fireflies": "FIREFLY SETTINGS", "Meteors": "METEOR SHOWER SETTINGS",
+    "Dust": "DUST MOTES SETTINGS", "Fireflies": "FIREFLY SETTINGS",
     "Leaves": "FALLING LEAVES SETTINGS", "Aurora": "AURORA SETTINGS"
   }
   readonly property var intensityLabels: {
     "Rain": "INTENSITY", "Snow": "DENSITY", "Ripples": "RAIN INTENSITY",
-    "Dust": "AMOUNT", "Fireflies": "AMOUNT", "Meteors": "FREQUENCY",
+    "Dust": "AMOUNT", "Fireflies": "AMOUNT",
     "Leaves": "DENSITY", "Aurora": "BRIGHTNESS"
   }
   readonly property var speedLabels: {
     "Rain": "RAINFALL SPEED", "Snow": "SNOWFALL SPEED", "Ripples": "RAIN SPEED",
-    "Dust": "FLOAT SPEED", "Fireflies": "DRIFT SPEED", "Meteors": "STREAK SPEED",
+    "Dust": "FLOAT SPEED", "Fireflies": "DRIFT SPEED",
     "Leaves": "FALL SPEED", "Aurora": "MOTION SPEED"
   }
   readonly property var rainyEffects: ["Rain"]
-  readonly property var implementedEffects: ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Meteors"]
+  readonly property var implementedEffects: ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Leaves"]
 
   // While a settings slider is being dragged, the preview values drive the
   // shader immediately; they clear when the persisted settings come back

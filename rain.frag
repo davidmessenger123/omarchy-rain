@@ -133,6 +133,51 @@ float fireflyLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float d
     return max(core * 0.9 + halo * 0.35, 0.0) * pulse;
 }
 
+// One falling-leaf layer. Every cell carries a single leaf drifting down the
+// screen on its own path: a gentle horizontal sway plus a sideways rock that
+// makes it tumble edge-on now and then. Each leaf is an elongated ellipse in
+// an autumn palette picked per cell, darkening when seen edge-on. `drift`
+// streams the whole layer horizontally so the wind visibly carries the fall.
+vec3 leafLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drift)
+{
+    vec2 gp = p + vec2(drift, 0.0);
+    vec2 sc = gp / cell;
+    vec2 sg = floor(sc);
+    vec2 sf = fract(sc);
+    vec2 rs = hash2(sg + seed);
+    float fy = fract(rs.y * 5.61 + flow * (0.25 + 0.55 * rs.x));
+    float fx = 0.5 + (rs.x - 0.5) * 0.55
+             + 0.30 * sin(flow * (0.6 + 0.8 * rs.y) + rs.x * 6.1)
+             + 0.18 * sin(flow * (1.0 + 0.6 * rs.x) + rs.y * 4.3);
+    vec2 fl = vec2(fx, fy);
+    vec2 dpx = (sf - fl) * cell;
+
+    // Rock side to side and slowly tumble so leaves flip over as they fall.
+    float ang = sin(flow * (0.9 + 1.4 * rs.y) + rs.x * 5.3) * 1.1
+              + flow * 0.25 * sign(rs.x - 0.5);
+    float ca = cos(ang), sa = sin(ang);
+    vec2 rr = vec2(dpx.x * ca - dpx.y * sa, dpx.x * sa + dpx.y * ca);
+
+    // Silhouette: an elongated ellipse that thins out when seen edge-on.
+    float maj = max(size, 1.0);
+    float minr = max(size * 0.38 * (0.35 + 0.65 * abs(ca)), 1.0);
+    float ex = rr.x / maj;
+    float ey = rr.y / minr;
+    float d = sqrt(ex * ex + ey * ey);
+    float a = 1.0 - smoothstep(0.75, 1.20, d);
+    a *= 0.55 + 0.45 * vnoise(vec2(rs.x * 2.9, flow * 0.7 + rs.y * 2.0));
+    if (a <= 0.0) return vec3(0.0);
+
+    // Autumn palette: rust, gold, deep red — mixed per leaf and slightly
+    // darkened when the leaf is seen edge-on.
+    float pal = hash(sg * 0.5 + seed + vec2(3.9, 7.1));
+    vec3 col = mix(vec3(0.82, 0.42, 0.10),
+                   vec3(0.90, 0.64, 0.18), smoothstep(0.15, 0.55, pal));
+    col = mix(col, vec3(0.60, 0.20, 0.04), smoothstep(0.65, 0.90, pal));
+    col *= 0.55 + 0.45 * abs(ca);
+    return col * max(a, 0.0);
+}
+
 // One rain layer in pixel space. Every cell of `cell` pixels carries a single
 // streak `th` px wide and up to `cell.y` px long, falling at its own speed,
 // bright at the head and tapering along the tail, wrapping back into the top
@@ -330,65 +375,22 @@ void main()
         return;
     }
 
-    // Meteor shower: a sparse field of twinkling stars under a deep night
-    // tint, with shooting stars skimming across on deterministic schedules.
-    // Each lane owns a time window and spawns one meteor — head bright,
-    // tail fading out behind it — that streaks down-left or down-right.
+    // Falling leaves: three depth layers of autumn leaves tumbling down over a
+    // warm, slightly golden autumn light. Each leaf is a rotated ellipse in a
+    // warm palette that rocks side to side as it falls.
     if (uEffect > 4.5 && uEffect < 5.5) {
-        float i = 1.0 + (uIntensity - 1.0) * 0.4;
+        float i = 1.0 + (uIntensity - 1.0) * 0.45;
+        vec3 l1 = leafLayer(p, vec2(56.0, 88.0) / i, 4.0, flow, vec2(3.3, 7.2), flow * 4.0) * 0.5;
+        vec3 l2 = leafLayer(p, vec2(110.0, 160.0) / i, 6.0, flow, vec2(8.1, 2.6), flow * 8.0) * 0.8;
+        vec3 l3 = leafLayer(p, vec2(200.0, 300.0) / i, 9.0, flow, vec2(5.7, 9.0), flow * 13.0) * 1.0;
+        vec3 leaves = clamp(l1 + l2 + l3, 0.0, 1.2);
 
-        vec3 col = vec3(0.10, 0.13, 0.21) * 0.45;
+        // Warm autumn light over the wallpaper; the leaves read as golden-red.
+        float lum = clamp(length(leaves), 0.0, 1.0);
+        vec3 col = vec3(0.82, 0.58, 0.30) * (0.25 + 0.45 * lum);
+        col += leaves * 1.15;
 
-        // Sparse static stars with a slow twinkle.
-        {
-            vec2 sc2 = p / vec2(62.0, 62.0);
-            vec2 sg2 = floor(sc2);
-            vec2 sf2 = fract(sc2);
-            vec2 rs2 = hash2(sg2 + vec2(91.0, 17.3));
-            float has = step(0.90, rs2.x);
-            vec2 off2 = (sf2 - 0.5) * 62.0;
-            float sdot = 1.0 - smoothstep(0.0, 2.0, length(off2));
-            float tw = 0.5 + 0.5 * vnoise(vec2(sg2.x * 0.5, flow * 0.25 + sg2.y * 0.7));
-            float st = has * sdot * tw;
-            col += vec3(0.85, 0.90, 1.00) * st * 0.8;
-        }
-
-        float met = 0.0;
-        for (int k = 0; k < 6; k++) {
-            float fk = float(k);
-            float period = (4.0 + 3.5 * hash(vec2(fk, 5.7))) / i;
-            float tp = fract(fk * 0.37 + flow / period);
-
-            float sx = mix(-1.0, 1.0, step(0.5, hash(vec2(fk, 7.7))));
-            float slope = 0.35 + 0.25 * hash(vec2(fk, 3.1));
-            vec2 dir = normalize(vec2(sx * (0.7 + 0.3 * hash(vec2(fk, 3.1))), slope));
-
-            // Spawn high enough that the whole trail is on screen when the
-            // streak appears, then it sweeps and fades.
-            vec2 o = vec2(0.1 + 0.8 * hash(vec2(fk, 1.1)),
-                          0.12 + 0.45 * hash(vec2(fk, 2.3))) * uRes;
-            float total = (0.55 + 0.40 * hash(vec2(fk, 4.4))) * uRes.x;
-            vec2 head = o + dir * (total * tp);
-            float tl = (0.08 + 0.14 * hash(vec2(fk, 6.2))) * uRes.x;
-
-            float lifeIn = smoothstep(0.0, 0.05, tp);
-            float lifeOut = 1.0 - smoothstep(0.82, 0.98, tp);
-            float bright = 0.4 + 0.6 * hash(vec2(fk, 8.8));
-
-            float d = length(p - head);
-            float headBlob = exp(-d * d / 20.0) * bright;
-            // Trail extends BEHIND the head (sb > 0 behind), fading along its
-            // length so the head leads and the streak follows it.
-            float sb = -dot(p - head, dir);
-            float perp = length(p - (head - dir * sb));
-            float tailGlow = exp(-sb * 3.5 / max(tl, 1.0)) * exp(-perp * perp / 12.0);
-            float lane = (headBlob + tailGlow * 0.6) * lifeIn * lifeOut * 0.9;
-            met += lane;
-        }
-
-        col += vec3(0.96, 0.97, 1.00) * met * 0.9;
-
-        float alpha = clamp(0.30 + met * 0.9, 0.0, 1.0);
+        float alpha = clamp(lum * 0.85 + 0.03, 0.0, 1.0);
         fragColor = vec4(col, alpha * qt_Opacity);
         return;
     }

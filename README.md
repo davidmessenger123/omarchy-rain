@@ -37,8 +37,7 @@ and the wallpaper untouched.
 | `Ripples` | Rain landing on water: expanding puddle rings |
 | `Dust` | Barely-moving motes drifting through a faint diagonal light shaft |
 | `Fireflies` | Warm-green points of light wandering and blinking at dusk |
-| `Meteors` | Shooting stars streaking across a twinkling night sky |
-| `Leaves` | *(coming)* leaves spiraling down |
+| `Leaves` | Autumn leaves tumbling down through warm golden light |
 | `Aurora` | *(coming)* undulating northern-lights ribbons |
 
 ## Settings
@@ -52,7 +51,7 @@ shell hot-applies to the running widget, so no editor or restart is needed.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `effect` | string | `"Rain"` | `Rain`, `Snow`, `Ripples`, `Dust`, `Fireflies`, `Meteors`, `Leaves`, `Aurora` |
+| `effect` | string | `"Rain"` | `Rain`, `Snow`, `Ripples`, `Dust`, `Fireflies`, `Leaves`, `Aurora` |
 | `density` | number | `2` | 1 (light) to 3 (heavy); per-effect meaning |
 | `speed` | number | `1` | 0.5 (lazy) to 3 (fast) effect motion |
 | `lightning` | boolean | `true` | Random real bolts for `Rain` |
@@ -80,7 +79,7 @@ fields can be hand-edited too (flat keys, like the stock widgets):
 - The shader source lives in `rain.frag` / `rain.vert`, precompiled to
   `.qsb` (Qt 6 ShaderEffect requires the precompiled form) and driven by
   uniforms: `time`, `uRes`, `uIntensity` (raw 1–3), `uSpeed`, `uEffect`
-  (effect switch 0–7), plus `uFlash`, `uStrike`, `uStrikeSeed`, `uStrikePos`
+  (effect switch 0–6), plus `uFlash`, `uStrike`, `uStrikeSeed`, `uStrikePos`
   for lightning.
 - Lightning is a QML sidecar: a drifting random timer picks a strike, freezes
   its shape (seed + screen position + length), then a five-step SequentialAnimation

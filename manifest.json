@@ -12,7 +12,7 @@
   },
   "barWidget": {
     "displayName": "BackgroundFX",
-    "description": "A wand icon that paints animated effects over the desktop wallpaper, behind every window. Pick an effect: rain with lightning, snowfall, puddle ripples, floating dust, fireflies, a meteor shower, falling leaves, or an aurora. Click to toggle; right-click for the effect switch plus continuous intensity and speed sliders. Effects render on a background layer behind every window, so your apps stay on top.",
+    "description": "A wand icon that paints animated effects over the desktop wallpaper, behind every window. Pick an effect: rain with lightning, snowfall, puddle ripples, floating dust, fireflies, falling leaves, or an aurora. Click to toggle; right-click for the effect switch plus continuous intensity and speed sliders. Effects render on a background layer behind every window, so your apps stay on top.",
     "category": "Effects",
     "allowMultiple": true,
     "schema": [
@@ -20,7 +20,7 @@
         "key": "effect",
         "type": "enum",
         "label": "Effect",
-        "options": ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Meteors", "Leaves", "Aurora"],
+        "options": ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Leaves", "Aurora"],
         "defaultValue": "Rain",
         "description": "The background effect painted over the wallpaper."
       },
@@ -32,7 +32,7 @@
         "max": 3,
         "step": 1,
         "defaultValue": 2,
-        "description": "Continuous intensity, 1 = light to 3 = heavy. Meaning per effect: rain intensity, snow density, leaf count, firefly amount, aurora brightness, meteor rate, dust amount. Non-integer in practice (the slider writes e.g. 2.4); the schema type is limited to integer for the editor."
+        "description": "Continuous intensity, 1 = light to 3 = heavy. Meaning per effect: rain intensity, snow density, leaf count, firefly amount, aurora brightness, dust amount. Non-integer in practice (the slider writes e.g. 2.4); the schema type is limited to integer for the editor."
       },
       {
         "key": "speed",
