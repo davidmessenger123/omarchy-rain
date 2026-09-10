@@ -56,8 +56,9 @@ float snowLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drif
     float fx = 0.5 + (rs.x - 0.5) * 0.55
              + 0.22 * sin(flow * (0.5 + 0.7 * rs.y) + rs.x * 7.2);
     float sway = 0.75 + 0.5 * vnoise(vec2(sg.x * 0.7 + seed.x, flow * 0.35 + seed.y));
-    vec2 flake = vec2(fx, fy) * cell;
-    float dist = length(p - flake) / max(0.5 * size * sway, 1.0);
+    vec2 fl = vec2(fx, fy);
+    vec2 dpx = (sf - fl) * cell;
+    float dist = length(dpx) / max(0.5 * size * sway, 1.0);
     float a = 1.0 - smoothstep(0.4, 1.15, dist);
     a *= 0.55 + 0.45 * vnoise(vec2(rs.x * 3.3, flow * 1.4));
     return max(a, 0.0);
