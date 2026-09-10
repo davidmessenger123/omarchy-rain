@@ -147,7 +147,7 @@ void main()
         float u = min(uRes.x, uRes.y);
         float yb = 0.86 * uRes.y;
         vec2 center = vec2(0.5 * uRes.x, yb);
-        float bedHalf = 0.34 * size * u;
+        float bedHalf = 0.30 * size * uRes.x;
         float hMax = 0.30 * size * u;
 
         // Five separate tongues, each breathing and wobbling on its own noise
@@ -206,11 +206,11 @@ void main()
         float posy = fract(rs.y * 13.7 - flow * (0.55 + 1.1 * rs.x));
         vec2 pc = vec2(0.5 + (rs.x - 0.5) * 0.45, posy);
         float sdist = length((sf - pc) * scSize);
-        float sparkA = step(0.62, rs.x) * (1.0 - smoothstep(3.2, 14.0, sdist));
+        float sparkA = step(0.66, rs.x) * (1.0 - smoothstep(1.5, 7.0, sdist));
         sparkA *= (0.55 + 0.45 * vnoise(vec2(sg.x * 2.7, flow * 3.1)));
         sparkA *= smoothstep(0.0, 0.30, posy);
         sparkA *= 1.0 - smoothstep(bedHalf * 0.50, bedHalf * 1.30, abs(p.x - center.x));
-        col += sparkA * vec3(1.0, 0.70, 0.30) * 1.3;
+        col += sparkA * vec3(1.0, 0.70, 0.30) * 1.1;
 
         // Warm light pool around the hearth, translucent so the wallpaper reads
         // through it.
