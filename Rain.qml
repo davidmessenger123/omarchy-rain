@@ -58,7 +58,7 @@ BarWidget {
     "Leaves": "FALL SPEED", "Aurora": "MOTION SPEED"
   }
   readonly property var rainyEffects: ["Rain"]
-  readonly property var implementedEffects: ["Rain", "Snow", "Ripples", "Dust", "Fireflies"]
+  readonly property var implementedEffects: ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Meteors"]
 
   // While a settings slider is being dragged, the preview values drive the
   // shader immediately; they clear when the persisted settings come back

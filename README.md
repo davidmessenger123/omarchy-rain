@@ -37,7 +37,7 @@ and the wallpaper untouched.
 | `Ripples` | Rain landing on water: expanding puddle rings |
 | `Dust` | Barely-moving motes drifting through a faint diagonal light shaft |
 | `Fireflies` | Warm-green points of light wandering and blinking at dusk |
-| `Meteors` | *(coming)* shooting-star streaks across the sky |
+| `Meteors` | Shooting stars streaking across a twinkling night sky |
 | `Leaves` | *(coming)* leaves spiraling down |
 | `Aurora` | *(coming)* undulating northern-lights ribbons |
 

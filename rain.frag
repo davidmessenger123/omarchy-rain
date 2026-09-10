@@ -330,6 +330,65 @@ void main()
         return;
     }
 
+    // Meteor shower: a sparse field of twinkling stars under a deep night
+    // tint, with shooting stars skimming across on deterministic schedules.
+    // Each lane owns a time window and spawns one meteor — head bright,
+    // tail fading out behind it — that streaks down-left or down-right.
+    if (uEffect > 4.5 && uEffect < 5.5) {
+        float i = 1.0 + (uIntensity - 1.0) * 0.4;
+
+        vec3 col = vec3(0.10, 0.13, 0.21) * 0.45;
+
+        // Sparse static stars with a slow twinkle.
+        {
+            vec2 sc2 = p / vec2(62.0, 62.0);
+            vec2 sg2 = floor(sc2);
+            vec2 sf2 = fract(sc2);
+            vec2 rs2 = hash2(sg2 + vec2(91.0, 17.3));
+            float has = step(0.90, rs2.x);
+            vec2 off2 = (sf2 - 0.5) * 62.0;
+            float sdot = 1.0 - smoothstep(0.0, 2.0, length(off2));
+            float tw = 0.5 + 0.5 * vnoise(vec2(sg2.x * 0.5, flow * 0.25 + sg2.y * 0.7));
+            float st = has * sdot * tw;
+            col += vec3(0.85, 0.90, 1.00) * st * 0.8;
+        }
+
+        float met = 0.0;
+        for (int k = 0; k < 6; k++) {
+            float fk = float(k);
+            float period = (4.0 + 3.5 * hash(vec2(fk, 5.7))) / i;
+            float tp = fract(fk * 0.37 + flow / period);
+
+            float sx = mix(-1.0, 1.0, step(0.5, hash(vec2(fk, 7.7))));
+            float slope = 0.45 + 0.35 * hash(vec2(fk, 3.1));
+            vec2 dir = normalize(vec2(sx * (0.7 + 0.3 * hash(vec2(fk, 3.1))), slope));
+
+            vec2 o = vec2(hash(vec2(fk, 1.1)) * 0.8 + 0.1,
+                          0.05 + 0.45 * hash(vec2(fk, 2.3))) * uRes;
+            float total = (0.55 + 0.40 * hash(vec2(fk, 4.4))) * uRes.x;
+            vec2 head = o + dir * (total * tp);
+            float tl = (0.18 + 0.35 * hash(vec2(fk, 6.2))) * uRes.x;
+
+            float lifeIn = smoothstep(0.0, 0.05, tp);
+            float lifeOut = 1.0 - smoothstep(0.82, 0.98, tp);
+            float bright = 0.4 + 0.6 * hash(vec2(fk, 8.8));
+
+            float d = length(p - head);
+            float headBlob = exp(-d * d / 16.0) * bright;
+            float s = dot(p - head, dir);
+            float perp = length(p - (head + dir * s));
+            float tailGlow = exp(s * 4.0 / max(tl, 1.0)) * exp(-perp * perp / 14.0) * bright;
+            float lane = (headBlob + tailGlow * 0.55) * lifeIn * lifeOut * 0.9;
+            met += lane;
+        }
+
+        col += vec3(0.96, 0.97, 1.00) * met * 0.9;
+
+        float alpha = clamp(0.30 + met * 0.9, 0.0, 1.0);
+        fragColor = vec4(col, alpha * qt_Opacity);
+        return;
+    }
+
     // Effects not yet implemented render nothing.
     fragColor = vec4(0.0, 0.0, 0.0, 0.0);
 }
