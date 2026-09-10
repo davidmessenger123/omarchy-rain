@@ -36,7 +36,7 @@ and the wallpaper untouched.
 | `Snow` | Drifting, tumbling flakes in three depth layers with wind sway |
 | `Ripples` | Rain landing on water: expanding puddle rings |
 | `Dust` | Barely-moving motes drifting through a faint diagonal light shaft |
-| `Fireflies` | *(coming)* tiny wandering points of light |
+| `Fireflies` | Warm-green points of light wandering and blinking at dusk |
 | `Meteors` | *(coming)* shooting-star streaks across the sky |
 | `Leaves` | *(coming)* leaves spiraling down |
 | `Aurora` | *(coming)* undulating northern-lights ribbons |

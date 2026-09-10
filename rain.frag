@@ -109,6 +109,30 @@ float dustLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drif
     return max(a, 0.0);
 }
 
+// One firefly layer. Each cell carries a single firefly: a bright tiny core
+// wrapped in a soft glow, wandering slowly with two offset sweeping sways and
+// pulsing its light with its own phase and rate so the scene quietly blinks
+// at dusk.
+float fireflyLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drift)
+{
+    vec2 gp = p + vec2(drift, 0.0);
+    vec2 sc = gp / cell;
+    vec2 sg = floor(sc);
+    vec2 sf = fract(sc);
+    vec2 rs = hash2(sg + seed);
+    float fy = fract(rs.y * 3.7 + flow * (0.05 + 0.15 * rs.x));
+    float fx = 0.5 + (rs.x - 0.5) * 0.6
+             + 0.30 * sin(flow * (0.10 + 0.18 * rs.y) + rs.x * 5.3)
+             + 0.18 * sin(flow * (0.12 + 0.24 * rs.x) + rs.y * 7.1 + 2.0);
+    vec2 fl = vec2(fx, fy);
+    vec2 dpx = (sf - fl) * cell;
+    float d = length(dpx);
+    float halo = 1.0 - smoothstep(size * 0.5, size * 2.5, d);
+    float core = 1.0 - smoothstep(0.0, size * 0.45, d);
+    float pulse = 0.55 + 0.45 * sin(flow * (0.8 + 0.9 * rs.y) + rs.x * 6.28);
+    return max(core * 0.9 + halo * 0.35, 0.0) * pulse;
+}
+
 // One rain layer in pixel space. Every cell of `cell` pixels carries a single
 // streak `th` px wide and up to `cell.y` px long, falling at its own speed,
 // bright at the head and tapering along the tail, wrapping back into the top
@@ -285,6 +309,23 @@ void main()
 
         vec3 col = vec3(0.98, 0.94, 0.85) * (0.10 + 0.55 * motes + beam * 0.7);
         float alpha = clamp(motes * 0.85 + beam * 0.5, 0.0, 1.0);
+        fragColor = vec4(col, alpha * qt_Opacity);
+        return;
+    }
+
+    // Fireflies: sparse warm-green points of light wandering slowly through a
+    // faint dusk, each blinking with its own phase and rate.
+    if (uEffect > 3.5 && uEffect < 4.5) {
+        float i = 1.0 + (uIntensity - 1.0) * 0.5;
+        float f1 = fireflyLayer(p, vec2(80.0, 90.0) / i, 2.0, flow, vec2(7.4, 2.1), flow * 1.0) * 0.7;
+        float f2 = fireflyLayer(p, vec2(160.0, 175.0) / i, 2.8, flow, vec2(3.9, 6.4), flow * 1.6) * 0.9;
+        float f3 = fireflyLayer(p, vec2(280.0, 300.0) / i, 3.6, flow, vec2(8.8, 4.9), flow * 2.2) * 1.0;
+        float flies = clamp(f1 + f2 + f3, 0.0, 1.1);
+
+        vec3 glow = vec3(0.85, 0.95, 0.45);
+        vec3 col = vec3(0.24, 0.30, 0.34) * 0.16;
+        col += glow * flies * 0.85;
+        float alpha = clamp(flies * 0.9 + 0.05, 0.0, 1.0);
         fragColor = vec4(col, alpha * qt_Opacity);
         return;
     }
