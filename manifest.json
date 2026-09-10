@@ -5,17 +5,25 @@
   "version": "1.0.0",
   "author": "David JM",
   "license": "MIT",
-  "description": "Animated rain over the desktop wallpaper, behind your windows. Toggled from the bar — a GPU shader paints streaks and splashes on a full-screen background layer, with optional lightning.",
+  "description": "Background effects over the desktop wallpaper, behind your windows. Toggled from the bar: a GPU shader paints animated rain or a crackling fireplace on a full-screen background layer, with optional lightning.",
   "kinds": ["bar-widget"],
   "entryPoints": {
     "barWidget": "Rain.qml"
   },
   "barWidget": {
-    "displayName": "Rain",
-    "description": "A droplet icon that pours rain over the desktop wallpaper. The rain renders on a background layer behind every window, so your apps stay on top of it. Click to toggle; right-click for continuous intensity and speed sliders plus a lightning toggle that draws real bolts.",
+    "displayName": "BackgroundFX",
+    "description": "A wand icon that paints effects over the desktop wallpaper. Pick Rain (falling streaks, optional lightning bolts) or Fireplace (a crackling hearth with rising embers). Effects render on a background layer behind every window, so your apps stay on top. Click to toggle; right-click for the effect switch, continuous intensity and speed sliders, and lighting options.",
     "category": "Effects",
     "allowMultiple": true,
     "schema": [
+      {
+        "key": "mode",
+        "type": "enum",
+        "label": "Effect",
+        "options": ["Rain", "Fireplace"],
+        "defaultValue": "Rain",
+        "description": "Rain over the wallpaper, or a crackling fireplace hearth with rising embers."
+      },
       {
         "key": "density",
         "type": "integer",
@@ -24,14 +32,14 @@
         "max": 3,
         "step": 1,
         "defaultValue": 2,
-        "description": "Continuous rainfall intensity, 1 = drizzle to 3 = downpour. Values are non-integer in practice (the widget's slider writes e.g. 2.4); the schema type is limited to integer for the editor."
+        "description": "Rain intensity (1 = drizzle to 3 = downpour) or fireplace size (1 = small to 3 = large), continuous. Values are non-integer in practice (the widget's slider writes e.g. 2.4); the schema type is limited to integer for the editor."
       },
       {
         "key": "lightning",
         "type": "boolean",
         "label": "Lightning flashes",
         "defaultValue": true,
-        "description": "Random real lightning bolts (with a soft sky flash) drawn by the shader."
+        "description": "Rain-only. Random real lightning bolts (with a soft sky flash) drawn by the shader."
       }
     ]
   }

@@ -6,10 +6,10 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// Rain — animated desktop rain. A full-screen layer-shell surface mapped on the
-// same `Background` layer Omarchy's wallpaper uses, so the drops fall over the
-// desktop while every window (and the bar) stays composited on top. A GPU
-// fragment shader paints the rain, so once running it costs almost no CPU.
+// Rain — animated desktop effects. A full-screen layer-shell surface mapped on
+// the same `Background` layer Omarchy's wallpaper uses, so the chosen effect
+// plays over the desktop while every window (and the bar) stays composited on
+// top. A GPU fragment shader paints it, so once running it costs almost no CPU.
 BarWidget {
   id: root
 
@@ -26,6 +26,7 @@ BarWidget {
   property real density: Number(root.effective("density", 2)) || 2
   property real speed: Number(root.effective("speed", 1.0)) || 1.0
   property bool lightning: root.effective("lightning", true)
+  property string mode: String(root.effective("mode", "Rain")) || "Rain"
 
   // While a settings slider is being dragged, the preview values drive the
   // shader immediately; they clear when the persisted settings come back
@@ -42,7 +43,7 @@ BarWidget {
   property real strikeLen: 0.6
 
   property bool settingsOpen: false
-  property bool raining: false
+  property bool active: false
   property real elapsed: 0.0
   property real flash: 0.0
   property string keyNotice: ""
@@ -77,7 +78,7 @@ BarWidget {
   }
 
   function toggle() {
-    root.raining = !root.raining
+    root.active = !root.active
   }
 
   function toggleSettings() {
@@ -125,6 +126,11 @@ BarWidget {
     root.keyNotice = on ? "Saved — lightning on." : "Saved — lightning off."
   }
 
+  function setMode(m) {
+    root.persistSettings({ "mode": m })
+    root.keyNotice = "Saved — effect " + m + "."
+  }
+
   function fireStrike() {
     root.strikeX = 0.15 + 0.7 * Math.random()
     root.strikeLen = 0.30 + 0.5 * Math.random()
@@ -144,24 +150,24 @@ BarWidget {
     configWriteProcess.running = true
   }
 
-  // Drives the shader's `time` uniform while the rain is visible. Keeping the
+  // Drives the shader's `time` uniform while the effect is visible. Keeping the
   // surface hidden when off means the compositor never composites it.
   Timer {
     id: ticker
     interval: 16
     repeat: true
-    running: root.raining
+    running: root.active
     onTriggered: root.elapsed = root.elapsed + 0.016
   }
 
-  // Random lightning. Sometimes a distant storm front just flashes the sky,
-  // sometimes it fires an actual bolt (see fireStrike and the shader's
-  // lighting). The interval drifts so strikes never feel metronomic.
+  // Random lightning (rain mode only). Sometimes a distant storm front just
+  // flashes the sky, sometimes it fires an actual bolt (see fireStrike and the
+  // shader's lighting). The interval drifts so strikes never feel metronomic.
   Timer {
     id: stormClock
     interval: 3400
     repeat: true
-    running: root.raining && root.lightning
+    running: root.active && root.mode === "Rain" && root.lightning
     onTriggered: {
       interval = 2600 + Math.random() * 4200
       if (Math.random() < 0.55) root.fireStrike()
@@ -192,7 +198,7 @@ BarWidget {
   }
 
   Behavior on flash {
-    enabled: root.raining
+    enabled: root.active
     NumberAnimation { duration: 340; easing.type: Easing.OutCubic }
   }
 
@@ -200,11 +206,11 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "\ue3b8"
-    tooltipText: "Rain — rain over the desktop wallpaper"
+    text: "\uf0d0"
+    tooltipText: "BackgroundFX — rain or a fireplace over the wallpaper"
     horizontalMargin: 8.25
     verticalPadding: 7.5
-    active: root.raining
+    active: root.active
 
     onPressed: function(mouseButton) {
       if (mouseButton === Qt.RightButton) root.toggleSettings()
@@ -212,9 +218,10 @@ BarWidget {
     }
   }
 
-  // Right-click settings menu — rainfall intensity (continuous), fall speed,
-  // and lightning. Changes apply live while dragging and persist to shell.json
-  // on release (live-patched by the shell, so no restart needed).
+  // Right-click settings menu — effect switch (rain / fireplace), intensity
+  // (rainfall density or hearth size), pace, and lightning. Changes apply live
+  // while dragging and persist to shell.json on release (live-patched by the
+  // shell, so no restart needed).
   KeyboardPanel {
     id: settingsPanel
     anchorItem: button
@@ -242,7 +249,7 @@ BarWidget {
         spacing: Style.space(8)
 
         Text {
-          text: "RAIN SETTINGS"
+          text: root.mode === "Fireplace" ? "FIREPLACE SETTINGS" : "RAIN SETTINGS"
           color: Color.accent
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -251,7 +258,26 @@ BarWidget {
         }
 
         Text {
-          text: "INTENSITY  ·  " + Math.round(root.density * 10) / 10
+          text: "EFFECT  ·  " + root.mode
+          color: Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.bold: true
+          Layout.alignment: Qt.AlignLeft
+          Layout.topMargin: Style.space(2)
+        }
+
+        ButtonGroup {
+          id: modeGroup
+          options: ["Rain", "Fireplace"]
+          value: root.mode
+          Layout.fillWidth: true
+          Layout.topMargin: Style.space(2)
+          onChanged: root.setMode(value)
+        }
+
+        Text {
+          text: (root.mode === "Fireplace" ? "FIRE SIZE" : "INTENSITY") + "  ·  " + Math.round(root.density * 10) / 10
           color: Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -278,7 +304,7 @@ BarWidget {
         }
 
         Text {
-          text: "RAINFALL SPEED  ·  " + Math.round(root.speed * 100) / 100
+          text: (root.mode === "Fireplace" ? "FLICKER SPEED" : "RAINFALL SPEED") + "  ·  " + Math.round(root.speed * 100) / 100
           color: Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -306,6 +332,7 @@ BarWidget {
         RowLayout {
           spacing: Style.space(10)
           Layout.topMargin: Style.space(4)
+          visible: root.mode !== "Fireplace"
 
           Toggle {
             id: lightningToggle
@@ -330,12 +357,12 @@ BarWidget {
     }
   }
 
-  // The rain surface, anchored to the monitor this bar widget lives on. It
+  // The effect surface, anchored to the monitor this bar widget lives on. It
   // rides the Background layer (under windows) instead of the overlay layer the
   // Scripture scrim uses, so the desktop moves beneath your apps.
   PanelWindow {
     id: rainWindow
-    visible: root.raining
+    visible: root.active
     screen: root.QsWindow && root.QsWindow.window ? root.QsWindow.window.screen : null
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
@@ -346,18 +373,20 @@ BarWidget {
 
     ShaderEffect {
       anchors.fill: parent
-      // intensity 1..3 maps 0.65..1.6 (column spacing divisor); speed 0.5..3
-      // scales fall velocity. While a panel slider is being dragged, the
-      // preview values drive these for a live look, then the persisted (and
+      // effect mode (0 = rain, 1 = fireplace) and raw intensity 1..3. The
+      // rain shader derives its column spacing from uIntensity; the fireplace
+      // scales the whole hearth with it. While a panel slider is being dragged,
+      // the preview values drive these for a live look, then the persisted (and
       // injected) values take over on release.
       property vector2d uRes: Qt.vector2d(width, height)
       property real time: root.elapsed
-      property real uIntensity: 0.65 + (root.densityPreview >= 0 ? root.densityPreview : root.density - 1.0) * 0.475
+      property real uIntensity: root.densityPreview >= 0 ? root.densityPreview : root.density
       property real uSpeed: root.speedPreview >= 0 ? root.speedPreview : root.speed
       property real uFlash: root.flash
       property real uStrike: root.strike
       property real uStrikeSeed: root.strikeSeed
       property vector2d uStrikePos: Qt.vector2d(root.strikeX, root.strikeLen)
+      property real uMode: root.mode === "Fireplace" ? 1.0 : 0.0
       vertexShader: Qt.resolvedUrl("rain.vert.qsb")
       fragmentShader: Qt.resolvedUrl("rain.frag.qsb")
     }
