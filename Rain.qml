@@ -267,6 +267,7 @@ BarWidget {
     PanelKeyCatcher {
       id: panelKeys
       anchors.fill: parent
+      blocked: effectDropdown.popupOpen
       onCloseRequested: root.closeSettings()
       onActivateRequested: {
         if (lightningToggle.activeFocus) root.setLightning(!root.lightning)
@@ -289,19 +290,17 @@ BarWidget {
           font.letterSpacing: 2
         }
 
-        Text {
-          text: "EFFECT  ·  " + (root.effectLabels[root.effect] || root.effect)
-          color: Color.foreground
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          font.bold: true
-          Layout.alignment: Qt.AlignLeft
-          Layout.topMargin: Style.space(2)
-        }
-
-        ButtonGroup {
-          id: effectGroup
-          options: root.implementedEffects
+        Dropdown {
+          id: effectDropdown
+          label: "EFFECT"
+          options: {
+            var o = []
+            for (var i = 0; i < root.implementedEffects.length; i++) {
+              var k = root.implementedEffects[i]
+              o.push({ "value": k, "label": root.effectLabels[k] })
+            }
+            return o
+          }
           value: root.effect
           Layout.fillWidth: true
           Layout.topMargin: Style.space(2)
