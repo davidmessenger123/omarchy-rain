@@ -40,22 +40,26 @@ float vnoise(vec2 q)
                mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
 
-// One flame tongue. Local space: `q` in pixels from the tongue's base on the
-// log bed; H is the flame height, W its base half-width. The body tapers to a
-// point, breathes with slow noise, and its edges curl inward/outward more the
-// higher up they go, so each tongue feels alive rather than a static teardrop.
-float fireTongue(vec2 q, float H, float W, float seed, float t)
+// One flame tongue. `base` is the tongue's anchor on the log bed; the flame
+// rises toward the top of the screen (GLSL screen y grows downward, so height
+// above the base is base.y - p.y). H is the flame height, W its base half-width.
+// The body tapers to a point, breathes with slow noise, and its edges curl
+// inward/outward more the higher up they go, so each tongue feels alive rather
+// than a static teardrop.
+float fireTongue(vec2 p, vec2 base, float H, float W, float seed, float t)
 {
-    float h = clamp(q.y / max(H, 1.0), 0.0, 1.0);
+    float qx = p.x - base.x;
+    float qy = base.y - p.y;
+    float h = clamp(qy / max(H, 1.0), 0.0, 1.0);
     float taper = 1.0 - h;
     float w = max(W * (0.16 + 0.84 * taper * taper), 2.0);
     float bob = vnoise(vec2(seed * 7.7, t * 1.1 + seed * 4.7));
     float h2 = clamp(h + (bob - 0.5) * 0.16, 0.0, 1.0);
     float wob = (vnoise(vec2(h2 * 2.6 + seed * 3.1, t * 2.3 + seed * 8.3)) - 0.5)
               * (1.1 + 2.2 * h2);
-    float d = (abs(q.x) - wob * w) / max(w, 1.0);
+    float d = (abs(qx) - wob * w) / max(w, 1.0);
     float body = 1.0 - smoothstep(0.25, 1.25, d);
-    body *= smoothstep(-0.05, 0.05, q.y);
+    body *= smoothstep(-8.0, 8.0, qy);
     body *= pow(1.0 - h, 1.5);
     return max(body, 0.0);
 }
@@ -141,7 +145,7 @@ void main()
     if (uMode > 0.5) {
         float size = 0.85 + (uIntensity - 1.0) * 0.25;
         float u = min(uRes.x, uRes.y);
-        float yb = 0.14 * uRes.y;
+        float yb = 0.86 * uRes.y;
         vec2 center = vec2(0.5 * uRes.x, yb);
         float bedHalf = 0.34 * size * u;
         float hMax = 0.38 * size * u;
@@ -156,7 +160,7 @@ void main()
             float H = hMax * clamp(rh, 0.22, 1.0);
             float W = H * 0.20;
             vec2 base = vec2(center.x + rx * bedHalf, yb);
-            lum += fireTongue(p - base, H, W, 11.0 + f * 7.3, flow);
+            lum += fireTongue(p, base, H, W, 11.0 + f * 7.3, flow);
         }
         float total = clamp(lum, 0.0, 1.2);
 
@@ -172,7 +176,7 @@ void main()
         // Log bed: a dark mound below the fire line whose glowing cracks
         // between logs simmer on their own slow noise.
         float yl = p.y - yb;
-        float logEdge = smoothstep(0.0, 7.0, -yl);
+        float logEdge = smoothstep(0.0, 7.0, yl);
         float logSides = smoothstep(bedHalf + 6.0, bedHalf - 8.0, abs(p.x - center.x));
         float logs = logEdge * logSides;
         float emberGlow = smoothstep(0.50, 0.95, vnoise(vec2(p.x * 1.35, 3.3)))
@@ -187,7 +191,7 @@ void main()
         vec2 sg = floor(sc);
         vec2 sf = fract(sc);
         vec2 rs = hash2(sg * 1.73 + 9.71);
-        float rise = fract(sf.y - flow * (0.7 + 1.3 * rs.x));
+        float rise = fract(sf.y + flow * (0.7 + 1.3 * rs.x));
         float sparkA = step(0.32, rs.x)
                      * smoothstep(0.30, 0.05, abs(rise - 0.42))
                      * smoothstep(0.85, 0.30, rise)
