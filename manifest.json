@@ -50,6 +50,13 @@
         "label": "Lightning flashes",
         "defaultValue": true,
         "description": "Rain effect: random real lightning bolts (with a soft sky flash) drawn by the shader."
+      },
+      {
+        "key": "audio",
+        "type": "boolean",
+        "label": "Audio reactive (Aurora)",
+        "defaultValue": false,
+        "description": "Aurora effect: the curtain reacts to system audio, swells with the music and shimmers faster."
       }
     ]
   }

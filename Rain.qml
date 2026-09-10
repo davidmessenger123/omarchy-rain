@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
+import Quickshell.Services.Pipewire
 import qs.Commons
 import qs.Ui
 
@@ -27,6 +28,7 @@ BarWidget {
   property real density: Number(root.effective("density", 2)) || 2
   property real speed: Number(root.effective("speed", 1.0)) || 1.0
   property bool lightning: root.effective("lightning", true)
+  property bool audio: root.effective("audio", false)
   property string effect: String(root.effective("effect", "Rain")) || "Rain"
 
   // Effect catalogue. `effectIds` maps every catalogue key to the shader's
@@ -78,6 +80,7 @@ BarWidget {
   property bool raining: false
   property real elapsed: 0.0
   property real flash: 0.0
+  property real audioLevel: 0.0
   property string keyNotice: ""
 
   // Absolute path to this plugin's folder, resolved from the QML file itself so
@@ -158,6 +161,11 @@ BarWidget {
     root.keyNotice = on ? "Saved — lightning on." : "Saved — lightning off."
   }
 
+  function setAudio(on) {
+    root.persistSettings({ "audio": on })
+    root.keyNotice = on ? "Saved — audio response on." : "Saved — audio response off."
+  }
+
   function setEffect(e) {
     root.persistSettings({ "effect": e })
     root.keyNotice = "Saved — effect " + root.effectLabels[e] + "."
@@ -189,7 +197,18 @@ BarWidget {
     interval: 16
     repeat: true
     running: root.raining
-    onTriggered: root.elapsed = root.elapsed + 0.016
+    onTriggered: {
+      root.elapsed = root.elapsed + 0.016
+      // Audio level: fast attack, slow release (target 0..1, boosted from the
+      // sink's raw peak so moderate music still drives the aurora).
+      var target = 0.0
+      if (root.audio && root.effect === "Aurora") {
+        var peak = audioPeak.peak
+        target = peak > 0 ? Math.min(1.0, peak * 3.0) : 0.0
+      }
+      var k = target > root.audioLevel ? 0.35 : 0.06
+      root.audioLevel = root.audioLevel + (target - root.audioLevel) * k
+    }
   }
 
   // Random lightning. Sometimes a distant storm front just flashes the sky,
@@ -227,6 +246,15 @@ BarWidget {
     id: flashFall
     interval: 380
     onTriggered: root.flash = 0.0
+  }
+
+  // System audio monitoring for audio-reactive effects (Aurora). Reads the
+  // default sink's per-frame peak; the ticker smooths it into `audioLevel`
+  // with a fast attack and slow release so the aurora swells with the music.
+  PwNodePeakMonitor {
+    id: audioPeak
+    node: Pipewire.defaultAudioSink
+    enabled: root.raining && root.audio
   }
 
   Behavior on flash {
@@ -271,9 +299,11 @@ BarWidget {
       onCloseRequested: root.closeSettings()
       onActivateRequested: {
         if (lightningToggle.activeFocus) root.setLightning(!root.lightning)
+        else if (audioToggle.activeFocus) root.setAudio(!root.audio)
       }
       onReturnRequested: {
         if (lightningToggle.activeFocus) root.setLightning(!root.lightning)
+        else if (audioToggle.activeFocus) root.setAudio(!root.audio)
       }
 
       ColumnLayout {
@@ -375,6 +405,21 @@ BarWidget {
           }
         }
 
+        RowLayout {
+          spacing: Style.space(10)
+          Layout.topMargin: Style.space(4)
+          visible: root.effect === "Aurora"
+
+          Toggle {
+            id: audioToggle
+            label: "Audio reactive"
+            checked: root.audio
+            titleSize: Style.font.body
+            Layout.fillWidth: true
+            onClicked: root.setAudio(!root.audio)
+          }
+        }
+
         Text {
           text: root.keyNotice
           visible: root.keyNotice !== ""
@@ -418,6 +463,7 @@ BarWidget {
       property real uStrikeSeed: root.strikeSeed
       property vector2d uStrikePos: Qt.vector2d(root.strikeX, root.strikeLen)
       property real uEffect: root.effectIds[root.effect] !== undefined ? root.effectIds[root.effect] : 0
+      property real uAudio: root.audioLevel
       vertexShader: Qt.resolvedUrl("rain.vert.qsb")
       fragmentShader: Qt.resolvedUrl("rain.frag.qsb")
     }

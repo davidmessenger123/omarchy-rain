@@ -15,6 +15,7 @@ layout(std140, binding = 0) uniform buf {
     float uStrikeSeed;
     vec2 uStrikePos;
     float uEffect;
+    float uAudio;
 };
 
 float hash(vec2 p)
@@ -418,17 +419,20 @@ void main()
         }
 
         // Curtain: an undulating lower edge, vertical folds, and a bright rim
-        // along the edge where the light pools brightest.
+        // along the edge where the light pools brightest. The audio level
+        // (uAudio 0..1, smoothed) lifts the curtain and quickens its shimmer.
+        float react = clamp(uAudio, 0.0, 1.0);
         float x = n.x * 6.2831;
-        float edge = 0.42
-                   + 0.055 * sin(x * 1.0 + flow * 0.5)
-                   + 0.030 * sin(x * 3.4 + flow * 0.32 + 2.1)
-                   + 0.018 * sin(x * 8.6 + flow * 0.18 + 4.7);
+        float edge = 0.42 - 0.05 * react
+                   + 0.055 * sin(x * 1.0 + flow * (0.5 + 0.9 * react))
+                   + 0.030 * sin(x * 3.4 + flow * (0.32 + 0.8 * react) + 2.1)
+                   + 0.018 * sin(x * 8.6 + flow * (0.18 + 1.0 * react) + 4.7);
         float y = 1.0 - n.y;
         float d = y - edge;
         float fade = exp(-max(d, 0.0) * 9.0) * smoothstep(-0.05, 0.0, d);
-        float w = sin(x * 3.0 + flow * 0.4) * 2.0 + sin(x * 7.0 + flow * 0.55) * 1.3;
-        float folds = 0.7 + 0.3 * sin(x * 26.0 + w + flow * 0.9);
+        float w = sin(x * 3.0 + flow * (0.4 + 1.2 * react)) * 2.0
+                + sin(x * 7.0 + flow * (0.55 + 1.4 * react)) * 1.3;
+        float folds = 0.7 + 0.3 * sin(x * 26.0 + w + flow * (0.9 + 1.6 * react));
         float rim = exp(-abs(d) * 26.0) * 0.5;
         float band = clamp(fade * folds + rim, 0.0, 1.3);
 
@@ -439,9 +443,9 @@ void main()
         vec3 pink = vec3(0.85, 0.50, 0.90);
         vec3 curtain = mix(green, teal, 0.4 + 0.4 * sin(x * 2.0 + flow * 0.35));
         curtain = mix(curtain, pink, smoothstep(0.40, 0.85, 1.0 - n.y));
-        col += curtain * (band * 0.55 * i);
+        col += curtain * (band * 0.55 * i * (1.0 + 1.2 * react));
 
-        float alpha = clamp(0.30 + band * 0.6 * (0.55 + 0.35 * i), 0.0, 1.0);
+        float alpha = clamp(0.30 + band * 0.6 * (0.55 + 0.35 * i) * (1.0 + react), 0.0, 1.0);
         fragColor = vec4(col, alpha * qt_Opacity);
         return;
     }

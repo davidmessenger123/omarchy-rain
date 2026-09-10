@@ -44,10 +44,12 @@ and the wallpaper untouched.
 
 **Right-click the wand for a settings menu**: an effect switch, an
 **intensity slider** (relabeled per effect, 1 = light to 3 = heavy), a
-**speed slider**, and a **lightning** toggle for the rain-based effects.
-Sliders preview live while you drag and commit on release — values are written
-as flat keys on the widget's entry in `shell.json` (atomic rewrite), which the
-shell hot-applies to the running widget, so no editor or restart is needed.
+**speed slider**, a **lightning** toggle for the rain-based effects, and an
+**audio reactive** toggle for the aurora (it swells and shimmers with what you
+play). Sliders preview live while you drag and commit on release — values are
+written as flat keys on the widget's entry in `shell.json` (atomic rewrite),
+which the shell hot-applies to the running widget, so no editor or restart is
+needed.
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
@@ -55,6 +57,7 @@ shell hot-applies to the running widget, so no editor or restart is needed.
 | `density` | number | `2` | 1 (light) to 3 (heavy); per-effect meaning |
 | `speed` | number | `1` | 0.5 (lazy) to 3 (fast) effect motion |
 | `lightning` | boolean | `true` | Random real bolts for `Rain` |
+| `audio` | boolean | `false` | `Aurora` reacts to system audio |
 
 The menu is also the fastest way to read the current baked-in values; the same
 fields can be hand-edited too (flat keys, like the stock widgets):
@@ -65,7 +68,8 @@ fields can be hand-edited too (flat keys, like the stock widgets):
   "effect": "Rain",
   "density": 2.4,
   "speed": 1.2,
-  "lightning": true
+  "lightning": true,
+  "audio": true
 }
 ```
 
