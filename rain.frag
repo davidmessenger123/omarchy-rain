@@ -14,6 +14,7 @@ layout(std140, binding = 0) uniform buf {
     float uStrike;
     float uStrikeSeed;
     vec2 uStrikePos;
+    float uEffect;
 };
 
 float hash(vec2 p)
@@ -99,13 +100,21 @@ void main()
     float flow = time * uSpeed;
     vec2 p = qt_TexCoord0 * uRes;
 
+    // Effect shell: every implemented effect is its own branch below. Effects
+    // not yet built render nothing (the menu only lists implemented ones, so
+    // this guard is a safety net during development).
+    if (uEffect > 0.5) {
+        fragColor = vec4(0.0, 0.0, 0.0, 0.0);
+        return;
+    }
+
     // Slight screen-space slant so the rain reads as falling at an angle.
     p.x += p.y * 0.08;
 
-    // Density (uIntensity grows 0.65 -> 1.6 across intensity 1..3) tightens
-    // the column spacing so higher intensity packs in visibly more drops; the
-    // alpha also climbs with it for a wetter read.
-    float i = uIntensity;
+    // Density (uIntensity 1..3 grows 0.65 -> 1.6 here) tightens the column
+    // spacing so higher intensity packs in visibly more drops; the alpha also
+    // climbs with it for a wetter read.
+    float i = 0.65 + (uIntensity - 1.0) * 0.475;
     float a1 = rainLayer(p, vec2(20.0 / i, 96.0), 1.5, 1.00, flow, vec2(3.1, 1.7)) * 0.34;
     float a2 = rainLayer(p, vec2(34.0 / i, 160.0), 1.2, 0.62, flow, vec2(9.4, 2.9)) * 0.19;
     float a3 = rainLayer(p, vec2(56.0 / i, 240.0), 0.9, 0.36, flow, vec2(5.2, 7.1)) * 0.13;

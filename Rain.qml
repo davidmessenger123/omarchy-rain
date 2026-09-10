@@ -6,10 +6,11 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// Rain — animated desktop rain. A full-screen layer-shell surface mapped on the
-// same `Background` layer Omarchy's wallpaper uses, so the drops fall over the
-// desktop while every window (and the bar) stays composited on top. A GPU
-// fragment shader paints the rain, so once running it costs almost no CPU.
+// BackgroundFX — animated desktop effects. A full-screen layer-shell surface
+// mapped on the same `Background` layer Omarchy's wallpaper uses, so the chosen
+// effect plays over the desktop while every window (and the bar) stays
+// composited on top. A GPU fragment shader paints it, so once running it costs
+// almost no CPU.
 BarWidget {
   id: root
 
@@ -26,6 +27,38 @@ BarWidget {
   property real density: Number(root.effective("density", 2)) || 2
   property real speed: Number(root.effective("speed", 1.0)) || 1.0
   property bool lightning: root.effective("lightning", true)
+  property string effect: String(root.effective("effect", "Rain")) || "Rain"
+
+  // Effect catalogue. `effectIds` maps every catalogue key to the shader's
+  // uEffect switch; `implementedEffects` lists the ones that actually render
+  // and grows as effects ship, so the menu only offers built effects.
+  readonly property var effectKeys: ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Meteors", "Leaves", "Aurora"]
+  readonly property var effectLabels: {
+    "Rain": "Rain", "Snow": "Snowfall", "Ripples": "Puddle Ripples",
+    "Dust": "Dust Motes", "Fireflies": "Fireflies", "Meteors": "Meteor Shower",
+    "Leaves": "Falling Leaves", "Aurora": "Aurora"
+  }
+  readonly property var effectIds: {
+    "Rain": 0, "Snow": 1, "Ripples": 2, "Dust": 3,
+    "Fireflies": 4, "Meteors": 5, "Leaves": 6, "Aurora": 7
+  }
+  readonly property var settingsTitles: {
+    "Rain": "RAIN SETTINGS", "Snow": "SNOWFALL SETTINGS", "Ripples": "PUDDLE RIPPLE SETTINGS",
+    "Dust": "DUST MOTES SETTINGS", "Fireflies": "FIREFLY SETTINGS", "Meteors": "METEOR SHOWER SETTINGS",
+    "Leaves": "FALLING LEAVES SETTINGS", "Aurora": "AURORA SETTINGS"
+  }
+  readonly property var intensityLabels: {
+    "Rain": "INTENSITY", "Snow": "DENSITY", "Ripples": "RAIN INTENSITY",
+    "Dust": "AMOUNT", "Fireflies": "AMOUNT", "Meteors": "FREQUENCY",
+    "Leaves": "DENSITY", "Aurora": "BRIGHTNESS"
+  }
+  readonly property var speedLabels: {
+    "Rain": "RAINFALL SPEED", "Snow": "SNOWFALL SPEED", "Ripples": "RAIN SPEED",
+    "Dust": "FLOAT SPEED", "Fireflies": "DRIFT SPEED", "Meteors": "STREAK SPEED",
+    "Leaves": "FALL SPEED", "Aurora": "MOTION SPEED"
+  }
+  readonly property var rainyEffects: ["Rain", "Ripples"]
+  readonly property var implementedEffects: ["Rain"]
 
   // While a settings slider is being dragged, the preview values drive the
   // shader immediately; they clear when the persisted settings come back
@@ -125,6 +158,11 @@ BarWidget {
     root.keyNotice = on ? "Saved — lightning on." : "Saved — lightning off."
   }
 
+  function setEffect(e) {
+    root.persistSettings({ "effect": e })
+    root.keyNotice = "Saved — effect " + root.effectLabels[e] + "."
+  }
+
   function fireStrike() {
     root.strikeX = 0.15 + 0.7 * Math.random()
     root.strikeLen = 0.30 + 0.5 * Math.random()
@@ -161,7 +199,7 @@ BarWidget {
     id: stormClock
     interval: 3400
     repeat: true
-    running: root.raining && root.lightning
+    running: root.raining && root.rainyEffects.indexOf(root.effect) >= 0 && root.lightning
     onTriggered: {
       interval = 2600 + Math.random() * 4200
       if (Math.random() < 0.55) root.fireStrike()
@@ -200,8 +238,8 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "\ue3b8"
-    tooltipText: "Rain — rain over the desktop wallpaper"
+    text: "\uf0d0"
+    tooltipText: "BackgroundFX — animated effects over the wallpaper"
     horizontalMargin: 8.25
     verticalPadding: 7.5
     active: root.raining
@@ -212,9 +250,10 @@ BarWidget {
     }
   }
 
-  // Right-click settings menu — rainfall intensity (continuous), fall speed,
-  // and lightning. Changes apply live while dragging and persist to shell.json
-  // on release (live-patched by the shell, so no restart needed).
+  // Right-click settings menu — the effect switch plus continuous intensity and
+  // speed sliders (per-effect labels) and lightning for the rainy effects.
+  // Changes apply live while dragging and persist to shell.json on release
+  // (live-patched by the shell, so no restart needed).
   KeyboardPanel {
     id: settingsPanel
     anchorItem: button
@@ -242,7 +281,7 @@ BarWidget {
         spacing: Style.space(8)
 
         Text {
-          text: "RAIN SETTINGS"
+          text: root.settingsTitles[root.effect] || "BACKGROUNDFX SETTINGS"
           color: Color.accent
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -251,7 +290,26 @@ BarWidget {
         }
 
         Text {
-          text: "INTENSITY  ·  " + Math.round(root.density * 10) / 10
+          text: "EFFECT  ·  " + (root.effectLabels[root.effect] || root.effect)
+          color: Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.bold: true
+          Layout.alignment: Qt.AlignLeft
+          Layout.topMargin: Style.space(2)
+        }
+
+        ButtonGroup {
+          id: effectGroup
+          options: root.implementedEffects
+          value: root.effect
+          Layout.fillWidth: true
+          Layout.topMargin: Style.space(2)
+          onChanged: root.setEffect(value)
+        }
+
+        Text {
+          text: (root.intensityLabels[root.effect] || "INTENSITY") + "  ·  " + Math.round(root.density * 10) / 10
           color: Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -278,7 +336,7 @@ BarWidget {
         }
 
         Text {
-          text: "RAINFALL SPEED  ·  " + Math.round(root.speed * 100) / 100
+          text: (root.speedLabels[root.effect] || "SPEED") + "  ·  " + Math.round(root.speed * 100) / 100
           color: Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -306,6 +364,7 @@ BarWidget {
         RowLayout {
           spacing: Style.space(10)
           Layout.topMargin: Style.space(4)
+          visible: root.rainyEffects.indexOf(root.effect) >= 0
 
           Toggle {
             id: lightningToggle
@@ -330,7 +389,7 @@ BarWidget {
     }
   }
 
-  // The rain surface, anchored to the monitor this bar widget lives on. It
+  // The effect surface, anchored to the monitor this bar widget lives on. It
   // rides the Background layer (under windows) instead of the overlay layer the
   // Scripture scrim uses, so the desktop moves beneath your apps.
   PanelWindow {
@@ -346,18 +405,20 @@ BarWidget {
 
     ShaderEffect {
       anchors.fill: parent
-      // intensity 1..3 maps 0.65..1.6 (column spacing divisor); speed 0.5..3
-      // scales fall velocity. While a panel slider is being dragged, the
-      // preview values drive these for a live look, then the persisted (and
-      // injected) values take over on release.
+      // uEffect selects the effect branch (0 = rain, 1 = snow, ... see the
+      // effectIds map). `density` (1..3) and `speed` (0.5..3) are passed raw;
+      // each effect derives its own parameters from them. While a panel slider
+      // is being dragged, the preview values drive these for a live look, then
+      // the persisted (and injected) values take over on release.
       property vector2d uRes: Qt.vector2d(width, height)
       property real time: root.elapsed
-      property real uIntensity: 0.65 + (root.densityPreview >= 0 ? root.densityPreview : root.density - 1.0) * 0.475
+      property real uIntensity: root.densityPreview >= 0 ? root.densityPreview : root.density
       property real uSpeed: root.speedPreview >= 0 ? root.speedPreview : root.speed
       property real uFlash: root.flash
       property real uStrike: root.strike
       property real uStrikeSeed: root.strikeSeed
       property vector2d uStrikePos: Qt.vector2d(root.strikeX, root.strikeLen)
+      property real uEffect: root.effectIds[root.effect] !== undefined ? root.effectIds[root.effect] : 0
       vertexShader: Qt.resolvedUrl("rain.vert.qsb")
       fragmentShader: Qt.resolvedUrl("rain.frag.qsb")
     }
