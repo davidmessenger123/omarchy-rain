@@ -360,25 +360,29 @@ void main()
             float tp = fract(fk * 0.37 + flow / period);
 
             float sx = mix(-1.0, 1.0, step(0.5, hash(vec2(fk, 7.7))));
-            float slope = 0.45 + 0.35 * hash(vec2(fk, 3.1));
+            float slope = 0.35 + 0.25 * hash(vec2(fk, 3.1));
             vec2 dir = normalize(vec2(sx * (0.7 + 0.3 * hash(vec2(fk, 3.1))), slope));
 
-            vec2 o = vec2(hash(vec2(fk, 1.1)) * 0.8 + 0.1,
-                          0.05 + 0.45 * hash(vec2(fk, 2.3))) * uRes;
+            // Spawn high enough that the whole trail is on screen when the
+            // streak appears, then it sweeps and fades.
+            vec2 o = vec2(0.1 + 0.8 * hash(vec2(fk, 1.1)),
+                          0.12 + 0.45 * hash(vec2(fk, 2.3))) * uRes;
             float total = (0.55 + 0.40 * hash(vec2(fk, 4.4))) * uRes.x;
             vec2 head = o + dir * (total * tp);
-            float tl = (0.18 + 0.35 * hash(vec2(fk, 6.2))) * uRes.x;
+            float tl = (0.08 + 0.14 * hash(vec2(fk, 6.2))) * uRes.x;
 
             float lifeIn = smoothstep(0.0, 0.05, tp);
             float lifeOut = 1.0 - smoothstep(0.82, 0.98, tp);
             float bright = 0.4 + 0.6 * hash(vec2(fk, 8.8));
 
             float d = length(p - head);
-            float headBlob = exp(-d * d / 16.0) * bright;
-            float s = dot(p - head, dir);
-            float perp = length(p - (head + dir * s));
-            float tailGlow = exp(s * 4.0 / max(tl, 1.0)) * exp(-perp * perp / 14.0) * bright;
-            float lane = (headBlob + tailGlow * 0.55) * lifeIn * lifeOut * 0.9;
+            float headBlob = exp(-d * d / 20.0) * bright;
+            // Trail extends BEHIND the head (sb > 0 behind), fading along its
+            // length so the head leads and the streak follows it.
+            float sb = -dot(p - head, dir);
+            float perp = length(p - (head - dir * sb));
+            float tailGlow = exp(-sb * 3.5 / max(tl, 1.0)) * exp(-perp * perp / 12.0);
+            float lane = (headBlob + tailGlow * 0.6) * lifeIn * lifeOut * 0.9;
             met += lane;
         }
 
