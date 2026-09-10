@@ -87,6 +87,28 @@ float rippleLayer(vec2 p, vec2 cell, float flow, vec2 seed, float amp, float w)
     return max(ring * fade * env, 0.0) * amp;
 }
 
+// One floating-dust layer. Each cell carries a mote that barely moves — a
+// long, slow vertical wander and a lazy figure-eight sway — so the motes hang
+// in the air and drift through the light rather than actively falling.
+float dustLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drift)
+{
+    vec2 gp = p + vec2(drift, 0.0);
+    vec2 sc = gp / cell;
+    vec2 sg = floor(sc);
+    vec2 sf = fract(sc);
+    vec2 rs = hash2(sg + seed);
+    float fy = fract(rs.y * 5.11 + flow * (0.03 + 0.12 * rs.x));
+    float fx = 0.5 + (rs.x - 0.5) * 0.7
+             + 0.35 * sin(flow * (0.15 + 0.25 * rs.y) + rs.x * 9.1)
+             + 0.20 * sin(flow * (0.07 + 0.17 * rs.y) + rs.x * 4.2);
+    vec2 fl = vec2(fx, fy);
+    vec2 dpx = (sf - fl) * cell;
+    float dist = length(dpx) / max(0.35 * size, 1.0);
+    float a = 1.0 - smoothstep(0.30, 1.20, dist);
+    a *= 0.6 + 0.4 * vnoise(vec2(rs.x * 2.3, flow * 0.3));
+    return max(a, 0.0);
+}
+
 // One rain layer in pixel space. Every cell of `cell` pixels carries a single
 // streak `th` px wide and up to `cell.y` px long, falling at its own speed,
 // bright at the head and tapering along the tail, wrapping back into the top
@@ -238,6 +260,31 @@ void main()
         col += vec3(0.82, 0.90, 1.00) * ripples * 0.9;
 
         float alpha = clamp(0.30 * sp + ripples * 0.95 + 0.06, 0.0, 1.0);
+        fragColor = vec4(col, alpha * qt_Opacity);
+        return;
+    }
+
+    // Floating dust motes: sparse, barely-moving specks drifting through a
+    // faint diagonal shaft of light. Meant to be subtle — the wallpaper stays
+    // visible, the motes just settle the scene like motes in a sunbeam.
+    if (uEffect > 2.5 && uEffect < 3.5) {
+        float i = 1.0 + (uIntensity - 1.0) * 0.45;
+        float m1 = dustLayer(p, vec2(46.0, 54.0) / i, 1.5, flow, vec2(6.2, 3.8), flow * 1.2) * 0.5;
+        float m2 = dustLayer(p, vec2(92.0, 108.0) / i, 2.2, flow, vec2(3.1, 8.9), flow * 1.8) * 0.8;
+        float m3 = dustLayer(p, vec2(160.0, 180.0) / i, 3.2, flow, vec2(9.7, 2.6), flow * 2.4) * 1.0;
+        float motes = clamp(m1 + m2 + m3, 0.0, 0.95);
+
+        vec2 o = vec2(-0.18 * uRes.x, -0.08 * uRes.y);
+        vec2 dd = vec2(0.75, 0.55);
+        float tt = clamp(dot(p - o, dd) / dot(dd, dd), 0.0, 1.6);
+        vec2 proj = o + dd * tt;
+        float beamD = length(p - proj);
+        float halfW = 0.12 * uRes.x;
+        float beam = exp(-beamD * beamD / (halfW * halfW * 2.0)) * 0.55;
+        beam *= 0.22;
+
+        vec3 col = vec3(0.98, 0.94, 0.85) * (0.10 + 0.55 * motes + beam * 0.7);
+        float alpha = clamp(motes * 0.85 + beam * 0.5, 0.0, 1.0);
         fragColor = vec4(col, alpha * qt_Opacity);
         return;
     }
