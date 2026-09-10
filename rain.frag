@@ -104,6 +104,29 @@ float lightningBolt(vec2 p, vec2 start, float lenPx, float ampPx, float seed)
     return d;
 }
 
+// One flame tongue. `base` sits on the log bed and the flame rises toward the
+// top of the screen (GLSL screen y grows downward, so the height above the base
+// is base.y - p.y). H is the steady height, W its base half-width. The tongue
+// breathes in and out, its edges wobble harder near the tip, and the head is a
+// rounded point — so a few of these read as separate licking flames, not one
+// stream.
+float flameTongue(vec2 p, vec2 base, float H, float W, float seed, float flow)
+{
+    float qx = p.x - base.x;
+    float qy = base.y - p.y;
+    if (qy <= 0.0) return 0.0;
+    float breathe = 0.80 + 0.38 * vnoise(vec2(seed * 9.7, flow * 1.6 + seed * 4.7));
+    float hb = clamp(qy / max(H * breathe, 1.0), 0.0, 1.0);
+    float taper = 1.0 - hb;
+    float w = max(W * (0.16 + 0.84 * taper * taper), 1.5);
+    float wob = (vnoise(vec2(seed * 5.3 + hb * 2.4, flow * 2.6 + seed * 8.1)) - 0.5)
+              * (0.7 + 2.0 * hb);
+    float d = (abs(qx) - wob * w) / max(w, 1.0);
+    float body = 1.0 - smoothstep(0.30, 1.20, d);
+    body *= pow(taper, 1.4);
+    return max(body, 0.0);
+}
+
 void main()
 {
     // Continuous time, no modulo: wrapping would teleport every streak at the
@@ -113,10 +136,11 @@ void main()
 
     // --------------------------------------------------------------------------
     // Fireplace mode. A hearth at the bottom center of the screen: five
-    // breathing flame tongues, a log bed with glowing ember cracks, rising
-    // sparks, and a warm light pool washing over the wallpaper. `uIntensity`
-    // (1..3) scales the whole hearth; `uSpeed` speeds the flicker up in a fire
-    // that would otherwise be a slow, cozy burn.
+    // distinct flame tongues (center tallest) with licking edges, a hot
+    // firebox dome under them, a log bed with glowing ember cracks, small
+    // rising embers, and a warm light pool washing over the wallpaper.
+    // `uIntensity` (1..3) scales the whole hearth; `uSpeed` speeds the flicker
+    // up in a fire that would otherwise be a slow, cozy burn.
     // --------------------------------------------------------------------------
     if (uMode > 0.5) {
         float size = 0.85 + (uIntensity - 1.0) * 0.25;
@@ -124,34 +148,41 @@ void main()
         float yb = 0.86 * uRes.y;
         vec2 center = vec2(0.5 * uRes.x, yb);
         float bedHalf = 0.34 * size * u;
-        float hMax = 0.34 * size * u;
+        float hMax = 0.30 * size * u;
 
-        // Fire silhouette: a low, broad mound (tallest at center, dipping at
-        // the flanks) whose top edge is ragged and flickers. The envelope is
-        // the main mass; noise raises random columns and occasional sharp
-        // "licks" dart above it, so the boundary reads as fire, not a jet.
-        float fx = (p.x - center.x) / bedHalf;
-        float y = yb - p.y;
-        float env = (1.0 - 0.72 * fx * fx) * (1.0 - smoothstep(0.85, 1.25, abs(fx)));
+        // Five separate tongues, each breathing and wobbling on its own noise
+        // phase (center tallest, outer pair lowest), so the silhouette shows
+        // several tips flickering independently instead of one solid column.
+        float lum = 0.0;
+        float core = 0.0;
+        float tc = flameTongue(p, vec2(center.x, yb), hMax, hMax * 0.10, 11.0, flow);
+        lum += tc;
+        core += tc * 1.30;
+        lum += flameTongue(p, vec2(center.x - 0.18 * bedHalf, yb), hMax * 0.84,
+                           hMax * 0.085, 23.0, flow * 0.7 + 1.7);
+        lum += flameTongue(p, vec2(center.x + 0.18 * bedHalf, yb), hMax * 0.78,
+                           hMax * 0.08, 37.0, flow * 0.7 + 3.1);
+        lum += flameTongue(p, vec2(center.x - 0.34 * bedHalf, yb), hMax * 0.52,
+                           hMax * 0.075, 53.0, flow * 0.7 + 2.2);
+        lum += flameTongue(p, vec2(center.x + 0.34 * bedHalf, yb), hMax * 0.46,
+                           hMax * 0.07, 67.0, flow * 0.7 + 0.9);
 
-        float nRag = vnoise(vec2(fx * 2.6 + 3.1, flow * 1.5 + 7.3));
-        float nCurl = vnoise(vec2(fx * 3.7 + 9.7, flow * 2.4 + 5.1));
-        float licks = pow(nCurl, 2.5) * 0.42;
+        float lumc = clamp(lum, 0.0, 1.4);
+        float corec = clamp(core, 0.0, 1.2);
 
-        float bound = hMax * env * (0.70 + 0.46 * nRag) * (0.80 + 0.35 * licks);
-        float soft = 0.05 * hMax;
-        float inA = 1.0 - smoothstep(bound - soft, bound + soft, y);
-        inA = max(inA, 0.0);
+        // Banks-of-fire color: deep red on the outer tongues and the tips, hot
+        // orange through the mass, white in the overlapping heart of the center
+        // tongue.
+        vec3 col = mix(vec3(0.90, 0.24, 0.05), vec3(1.00, 0.60, 0.13),
+                       smoothstep(0.05, 0.55, lumc));
+        col = mix(col, vec3(1.00, 0.95, 0.74), smoothstep(0.30, 0.80, corec));
+        col *= 0.32 + 0.92 * lumc;
 
-        // Red at the base and the ragged tips, white-hot in the lower middle.
-        float yy = clamp(y / max(bound, 1.0), 0.0, 1.0);
-        float heat = clamp(1.0 - pow(abs(yy - 0.40) / 0.62, 0.75), 0.0, 1.0);
-        heat *= 0.72 + 0.28 * vnoise(vec2(fx * 3.3, y * 0.012 + flow * 2.8));
-        vec3 cool = mix(vec3(0.95, 0.24, 0.04), vec3(0.34, 0.05, 0.014),
-                        smoothstep(0.0, 1.0, yy));
-        vec3 hot = mix(vec3(1.00, 0.70, 0.25), vec3(1.00, 0.96, 0.78), heat);
-        vec3 fire = mix(cool, hot, pow(heat, 1.6));
-        vec3 col = fire * (0.30 + 0.85 * inA);
+        // Firebox: a hot dome hugging the bed just under the tongues, so the
+        // flames sit on a solid bank of fire rather than floating sticks.
+        float fb = exp(-pow((p.x - center.x) / bedHalf, 2.0) * 3.0)
+                 * exp(-max(yb - p.y, 0.0) / (0.10 * hMax));
+        col = mix(col, vec3(1.0, 0.42, 0.09), clamp(0.8 * fb, 0.0, 1.0));
 
         // Log bed: a dark mound below the fire line whose glowing cracks
         // between logs simmer on their own slow noise.
@@ -166,19 +197,20 @@ void main()
         float bedAlpha = logs * 0.95;
         col = mix(col, bedCol, bedAlpha * 0.85);
 
-        // Rising embers: one bright point per cell lane, drifting up from the
-        // bed, twinkling, and fading toward the ceiling.
-        vec2 sc = p / vec2(15.0, 48.0);
-        vec2 sg = floor(sc);
-        vec2 sf = fract(sc);
+        // Rising embers: one small bright point per cell, rising from the bed,
+        // twinkling, and fading as it nears the top of its cell.
+        vec2 scSize = vec2(24.0, 56.0);
+        vec2 sg = floor(p / scSize);
+        vec2 sf = fract(p / scSize);
         vec2 rs = hash2(sg * 1.73 + 9.71);
-        float rise = fract(sf.y + flow * (0.7 + 1.3 * rs.x));
-        float sparkA = step(0.32, rs.x)
-                     * (1.0 - smoothstep(0.05, 0.30, abs(rise - 0.42)))
-                     * (1.0 - smoothstep(0.30, 0.85, rise))
-                     * (1.0 - smoothstep(bedHalf * 0.45, bedHalf * 1.45, abs(p.x - center.x)))
-                     * (0.5 + 0.5 * vnoise(vec2(sg.x * 3.1, flow * 2.2)));
-        col += sparkA * vec3(1.0, 0.68, 0.28) * 1.4;
+        float posy = fract(rs.y * 13.7 - flow * (0.55 + 1.1 * rs.x));
+        vec2 pc = vec2(0.5 + (rs.x - 0.5) * 0.45, posy);
+        float sdist = length((sf - pc) * scSize);
+        float sparkA = step(0.62, rs.x) * (1.0 - smoothstep(3.2, 14.0, sdist));
+        sparkA *= (0.55 + 0.45 * vnoise(vec2(sg.x * 2.7, flow * 3.1)));
+        sparkA *= smoothstep(0.0, 0.30, posy);
+        sparkA *= 1.0 - smoothstep(bedHalf * 0.50, bedHalf * 1.30, abs(p.x - center.x));
+        col += sparkA * vec3(1.0, 0.70, 0.30) * 1.3;
 
         // Warm light pool around the hearth, translucent so the wallpaper reads
         // through it.
@@ -186,7 +218,7 @@ void main()
         float glow = exp(-dGlow * dGlow / (bedHalf * bedHalf * 16.0));
         col = mix(col, vec3(1.0, 0.36, 0.09), glow * 0.5);
 
-        float alpha = clamp(inA * 0.95 + glow * 0.5
+        float alpha = clamp(lumc * 0.80 + fb * 0.55 + glow * 0.45
                             + bedAlpha * 0.9 + sparkA * 0.9, 0.0, 1.0);
         fragColor = vec4(col, alpha * qt_Opacity);
         return;
