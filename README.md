@@ -34,7 +34,7 @@ and the wallpaper untouched.
 | --- | --- |
 | `Rain` | Falling streaks in three depth layers over a wet-window dim, with optional lightning bolts |
 | `Snow` | Drifting, tumbling flakes in three depth layers with wind sway |
-| `Ripples` | Rain landing on water: expanding puddle rings with lightning |
+| `Ripples` | Rain landing on water: expanding puddle rings |
 | `Dust` | *(coming)* slow floating dust motes |
 | `Fireflies` | *(coming)* tiny wandering points of light |
 | `Meteors` | *(coming)* shooting-star streaks across the sky |
@@ -55,7 +55,7 @@ shell hot-applies to the running widget, so no editor or restart is needed.
 | `effect` | string | `"Rain"` | `Rain`, `Snow`, `Ripples`, `Dust`, `Fireflies`, `Meteors`, `Leaves`, `Aurora` |
 | `density` | number | `2` | 1 (light) to 3 (heavy); per-effect meaning |
 | `speed` | number | `1` | 0.5 (lazy) to 3 (fast) effect motion |
-| `lightning` | boolean | `true` | Random real bolts for `Rain` / `Ripples` |
+| `lightning` | boolean | `true` | Random real bolts for `Rain` |
 
 The menu is also the fastest way to read the current baked-in values; the same
 fields can be hand-edited too (flat keys, like the stock widgets):

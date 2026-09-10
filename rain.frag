@@ -224,8 +224,7 @@ void main()
     }
 
     // Puddle ripples: drops hitting a notional water surface throw up
-    // expanding rings, with a light sprinkle overhead and the same storm
-    // lightning as rain.
+    // expanding rings, with a light sprinkle overhead.
     if (uEffect > 1.5 && uEffect < 2.5) {
         float i = 1.0 + (uIntensity - 1.0) * 0.5;
         float r1 = rippleLayer(p, vec2(36.0, 36.0) / i, flow, vec2(5.1, 8.3), 0.45, 1.2);
@@ -238,24 +237,7 @@ void main()
         vec3 col = vec3(0.45, 0.53, 0.66) * (0.35 + 0.55 * sp);
         col += vec3(0.82, 0.90, 1.00) * ripples * 0.9;
 
-        float flash = uFlash;
-        col += vec3(0.28, 0.31, 0.38) * flash * 0.5;
-
-        float boltAlpha = 0.0;
-        if (uStrike > 0.001) {
-            vec2 start = vec2(uStrikePos.x * uRes.x, 0.03 * uRes.y);
-            float lenPx = uStrikePos.y * uRes.y * 0.75;
-            float ampPx = 0.03 * uRes.x;
-            float d = lightningBolt(p, start, lenPx, ampPx, uStrikeSeed);
-            float dist = sqrt(max(d, 0.0));
-            float core = smoothstep(1.4, 0.0, dist);
-            float glow = exp(-dist * 0.06) * 0.5;
-            boltAlpha = (core + glow) * uStrike;
-            col += vec3(0.72, 0.82, 1.0) * boltAlpha;
-        }
-
-        float alpha = clamp(0.30 * sp + ripples * 0.95 + 0.06
-                            + clamp(boltAlpha, 0.0, 1.0) * 0.9, 0.0, 1.0);
+        float alpha = clamp(0.30 * sp + ripples * 0.95 + 0.06, 0.0, 1.0);
         fragColor = vec4(col, alpha * qt_Opacity);
         return;
     }

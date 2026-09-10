@@ -57,7 +57,7 @@ BarWidget {
     "Dust": "FLOAT SPEED", "Fireflies": "DRIFT SPEED", "Meteors": "STREAK SPEED",
     "Leaves": "FALL SPEED", "Aurora": "MOTION SPEED"
   }
-  readonly property var rainyEffects: ["Rain", "Ripples"]
+  readonly property var rainyEffects: ["Rain"]
   readonly property var implementedEffects: ["Rain", "Snow", "Ripples"]
 
   // While a settings slider is being dragged, the preview values drive the
