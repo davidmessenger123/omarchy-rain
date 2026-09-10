@@ -40,30 +40,6 @@ float vnoise(vec2 q)
                mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
 
-// One flame tongue. `base` is the tongue's anchor on the log bed; the flame
-// rises toward the top of the screen (GLSL screen y grows downward, so height
-// above the base is base.y - p.y). H is the flame height, W its base half-width.
-// The body tapers to a point, breathes with slow noise, and its edges curl
-// inward/outward more the higher up they go, so each tongue feels alive rather
-// than a static teardrop.
-float fireTongue(vec2 p, vec2 base, float H, float W, float seed, float t)
-{
-    float qx = p.x - base.x;
-    float qy = base.y - p.y;
-    float h = clamp(qy / max(H, 1.0), 0.0, 1.0);
-    float taper = 1.0 - h;
-    float w = max(W * (0.16 + 0.84 * taper * taper), 2.0);
-    float bob = vnoise(vec2(seed * 7.7, t * 1.1 + seed * 4.7));
-    float h2 = clamp(h + (bob - 0.5) * 0.16, 0.0, 1.0);
-    float wob = (vnoise(vec2(h2 * 2.6 + seed * 3.1, t * 2.3 + seed * 8.3)) - 0.5)
-              * (1.1 + 2.2 * h2);
-    float d = (abs(qx) - wob * w) / max(w, 1.0);
-    float body = 1.0 - smoothstep(0.25, 1.25, d);
-    body *= smoothstep(-8.0, 8.0, qy);
-    body *= pow(1.0 - h, 1.5);
-    return max(body, 0.0);
-}
-
 // One rain layer in pixel space. Every cell of `cell` pixels carries a single
 // streak `th` px wide and up to `cell.y` px long, falling at its own speed,
 // bright at the head and tapering along the tail, wrapping back into the top
@@ -148,42 +124,47 @@ void main()
         float yb = 0.86 * uRes.y;
         vec2 center = vec2(0.5 * uRes.x, yb);
         float bedHalf = 0.34 * size * u;
-        float hMax = 0.38 * size * u;
+        float hMax = 0.34 * size * u;
 
-        // Three center tongues plus two shorter flanking ones.
-        float lum = 0.0;
-        for (int i = 0; i < 5; i++) {
-            float f = float(i);
-            float rx = (f - 2.0) * 0.23;
-            float rh = (1.0 - 0.42 * abs(f - 2.0))
-                     * (0.72 + 0.28 * hash(vec2(f * 3.7, 7.1)));
-            float H = hMax * clamp(rh, 0.22, 1.0);
-            float W = H * 0.20;
-            vec2 base = vec2(center.x + rx * bedHalf, yb);
-            lum += fireTongue(p, base, H, W, 11.0 + f * 7.3, flow);
-        }
-        float total = clamp(lum, 0.0, 1.2);
+        // Fire silhouette: a low, broad mound (tallest at center, dipping at
+        // the flanks) whose top edge is ragged and flickers. The envelope is
+        // the main mass; noise raises random columns and occasional sharp
+        // "licks" dart above it, so the boundary reads as fire, not a jet.
+        float fx = (p.x - center.x) / bedHalf;
+        float y = yb - p.y;
+        float env = (1.0 - 0.72 * fx * fx) * (1.0 - smoothstep(0.85, 1.25, abs(fx)));
 
-        // Banks-of-fire color ramp: deep red edges, orange flanks, golden core.
-        vec3 ramp0 = vec3(0.33, 0.05, 0.01);
-        vec3 ramp1 = vec3(0.90, 0.22, 0.02);
-        vec3 ramp2 = vec3(1.00, 0.55, 0.10);
-        vec3 ramp3 = vec3(1.00, 0.90, 0.55);
-        vec3 fire = mix(mix(mix(ramp0, ramp1, smoothstep(0.08, 0.35, total)),
-                            ramp2, smoothstep(0.30, 0.62, total)),
-                        ramp3, smoothstep(0.58, 0.95, total));
+        float nRag = vnoise(vec2(fx * 2.6 + 3.1, flow * 1.5 + 7.3));
+        float nCurl = vnoise(vec2(fx * 3.7 + 9.7, flow * 2.4 + 5.1));
+        float licks = pow(nCurl, 2.5) * 0.42;
+
+        float bound = hMax * env * (0.70 + 0.46 * nRag) * (0.80 + 0.35 * licks);
+        float soft = 0.05 * hMax;
+        float inA = 1.0 - smoothstep(bound - soft, bound + soft, y);
+        inA = max(inA, 0.0);
+
+        // Red at the base and the ragged tips, white-hot in the lower middle.
+        float yy = clamp(y / max(bound, 1.0), 0.0, 1.0);
+        float heat = clamp(1.0 - pow(abs(yy - 0.40) / 0.62, 0.75), 0.0, 1.0);
+        heat *= 0.72 + 0.28 * vnoise(vec2(fx * 3.3, y * 0.012 + flow * 2.8));
+        vec3 cool = mix(vec3(0.95, 0.24, 0.04), vec3(0.34, 0.05, 0.014),
+                        smoothstep(0.0, 1.0, yy));
+        vec3 hot = mix(vec3(1.00, 0.70, 0.25), vec3(1.00, 0.96, 0.78), heat);
+        vec3 fire = mix(cool, hot, pow(heat, 1.6));
+        vec3 col = fire * (0.30 + 0.85 * inA);
 
         // Log bed: a dark mound below the fire line whose glowing cracks
         // between logs simmer on their own slow noise.
         float yl = p.y - yb;
         float logEdge = smoothstep(0.0, 7.0, yl);
-        float logSides = smoothstep(bedHalf + 6.0, bedHalf - 8.0, abs(p.x - center.x));
+        float logSides = 1.0 - smoothstep(bedHalf - 6.0, bedHalf + 10.0, abs(p.x - center.x));
         float logs = logEdge * logSides;
         float emberGlow = smoothstep(0.50, 0.95, vnoise(vec2(p.x * 1.35, 3.3)))
                         * (0.55 + 0.45 * vnoise(vec2(p.x * 0.7, flow * 0.9)));
         vec3 bedCol = mix(vec3(0.075, 0.045, 0.028), vec3(1.0, 0.42, 0.10),
                           clamp(emberGlow, 0.0, 1.0));
         float bedAlpha = logs * 0.95;
+        col = mix(col, bedCol, bedAlpha * 0.85);
 
         // Rising embers: one bright point per cell lane, drifting up from the
         // bed, twinkling, and fading toward the ceiling.
@@ -193,22 +174,20 @@ void main()
         vec2 rs = hash2(sg * 1.73 + 9.71);
         float rise = fract(sf.y + flow * (0.7 + 1.3 * rs.x));
         float sparkA = step(0.32, rs.x)
-                     * smoothstep(0.30, 0.05, abs(rise - 0.42))
-                     * smoothstep(0.85, 0.30, rise)
-                     * smoothstep(bedHalf * 1.25, bedHalf * 0.35, abs(p.x - center.x))
+                     * (1.0 - smoothstep(0.05, 0.30, abs(rise - 0.42)))
+                     * (1.0 - smoothstep(0.30, 0.85, rise))
+                     * (1.0 - smoothstep(bedHalf * 0.45, bedHalf * 1.45, abs(p.x - center.x)))
                      * (0.5 + 0.5 * vnoise(vec2(sg.x * 3.1, flow * 2.2)));
+        col += sparkA * vec3(1.0, 0.68, 0.28) * 1.4;
 
         // Warm light pool around the hearth, translucent so the wallpaper reads
         // through it.
-        float dGlow = length(p - vec2(center.x, yb - 18.0));
-        float glow = exp(-dGlow * dGlow / (bedHalf * bedHalf * 14.5));
-
-        vec3 col = mix(fire, bedCol, bedAlpha * 0.85);
+        float dGlow = length(p - vec2(center.x, yb - 0.30 * hMax));
+        float glow = exp(-dGlow * dGlow / (bedHalf * bedHalf * 16.0));
         col = mix(col, vec3(1.0, 0.36, 0.09), glow * 0.5);
-        col += sparkA * vec3(1.0, 0.68, 0.28) * 1.4;
 
-        float alpha = clamp(lum * (0.62 + 0.18 * uIntensity) + glow * 0.42
-                            + bedAlpha * 0.9 + sparkA * 0.85, 0.0, 1.0);
+        float alpha = clamp(inA * 0.95 + glow * 0.5
+                            + bedAlpha * 0.9 + sparkA * 0.9, 0.0, 1.0);
         fragColor = vec4(col, alpha * qt_Opacity);
         return;
     }
