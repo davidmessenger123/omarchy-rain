@@ -64,6 +64,29 @@ float snowLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drif
     return max(a, 0.0);
 }
 
+// One puddle-ripple layer. Every cell hosts a drop that lands at a random
+// offset and throws up a ring; the ring expands across the cell's lifetime and
+// fades out before it reaches the boundary, and an envelope kills it at the
+// cell edges too, so the tiling never shows hard seams.
+float rippleLayer(vec2 p, vec2 cell, float flow, vec2 seed, float amp, float w)
+{
+    vec2 sc = p / cell;
+    vec2 sg = floor(sc);
+    vec2 sf = fract(sc);
+    vec2 rs = hash2(sg + seed);
+    float phase = fract(rs.x * 3.7 + flow * (0.35 + 0.55 * rs.y));
+    float maxR = 0.46 * min(cell.x, cell.y) * (0.65 + 0.7 * rs.y);
+    float radius = phase * maxR;
+    float fade = (1.0 - smoothstep(0.10, 0.92, phase))
+               * (0.4 + 0.6 * vnoise(vec2(sg.x * 0.6, flow * 0.5 + rs.y * 2.0)));
+    vec2 off = (sf - 0.5) * cell;
+    float r = length(off);
+    float ring = 1.0 - smoothstep(0.0, w, abs(r - radius));
+    float env = min(1.0 - smoothstep(0.16, 0.46, abs(sf.x - 0.5)),
+                    1.0 - smoothstep(0.16, 0.46, abs(sf.y - 0.5)));
+    return max(ring * fade * env, 0.0) * amp;
+}
+
 // One rain layer in pixel space. Every cell of `cell` pixels carries a single
 // streak `th` px wide and up to `cell.y` px long, falling at its own speed,
 // bright at the head and tapering along the tail, wrapping back into the top
@@ -196,6 +219,43 @@ void main()
 
         vec3 col = vec3(0.80, 0.86, 0.98) * (0.30 + 1.05 * total);
         float alpha = clamp(total * 0.95 + 0.04 * (uIntensity - 1.0), 0.0, 1.0);
+        fragColor = vec4(col, alpha * qt_Opacity);
+        return;
+    }
+
+    // Puddle ripples: drops hitting a notional water surface throw up
+    // expanding rings, with a light sprinkle overhead and the same storm
+    // lightning as rain.
+    if (uEffect > 1.5 && uEffect < 2.5) {
+        float i = 1.0 + (uIntensity - 1.0) * 0.5;
+        float r1 = rippleLayer(p, vec2(36.0, 36.0) / i, flow, vec2(5.1, 8.3), 0.45, 1.2);
+        float r2 = rippleLayer(p, vec2(78.0, 78.0) / i, flow, vec2(11.7, 3.1), 0.75, 1.8);
+        float r3 = rippleLayer(p, vec2(150.0, 150.0) / i, flow, vec2(2.6, 9.4), 1.00, 2.4);
+        float ripples = clamp(r1 + r2 + r3, 0.0, 1.2);
+
+        float sp = rainLayer(p, vec2(30.0, 120.0), 1.1, 0.9, flow, vec2(9.4, 2.9)) * 0.35;
+
+        vec3 col = vec3(0.45, 0.53, 0.66) * (0.35 + 0.55 * sp);
+        col += vec3(0.82, 0.90, 1.00) * ripples * 0.9;
+
+        float flash = uFlash;
+        col += vec3(0.28, 0.31, 0.38) * flash * 0.5;
+
+        float boltAlpha = 0.0;
+        if (uStrike > 0.001) {
+            vec2 start = vec2(uStrikePos.x * uRes.x, 0.03 * uRes.y);
+            float lenPx = uStrikePos.y * uRes.y * 0.75;
+            float ampPx = 0.03 * uRes.x;
+            float d = lightningBolt(p, start, lenPx, ampPx, uStrikeSeed);
+            float dist = sqrt(max(d, 0.0));
+            float core = smoothstep(1.4, 0.0, dist);
+            float glow = exp(-dist * 0.06) * 0.5;
+            boltAlpha = (core + glow) * uStrike;
+            col += vec3(0.72, 0.82, 1.0) * boltAlpha;
+        }
+
+        float alpha = clamp(0.30 * sp + ripples * 0.95 + 0.06
+                            + clamp(boltAlpha, 0.0, 1.0) * 0.9, 0.0, 1.0);
         fragColor = vec4(col, alpha * qt_Opacity);
         return;
     }

@@ -34,7 +34,7 @@ and the wallpaper untouched.
 | --- | --- |
 | `Rain` | Falling streaks in three depth layers over a wet-window dim, with optional lightning bolts |
 | `Snow` | Drifting, tumbling flakes in three depth layers with wind sway |
-| `Ripples` | *(coming)* rain with expanding puddle rings |
+| `Ripples` | Rain landing on water: expanding puddle rings with lightning |
 | `Dust` | *(coming)* slow floating dust motes |
 | `Fireflies` | *(coming)* tiny wandering points of light |
 | `Meteors` | *(coming)* shooting-star streaks across the sky |
