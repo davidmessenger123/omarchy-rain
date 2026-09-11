@@ -7,7 +7,7 @@ from the wand icon in the Omarchy bar.
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/davidjm/omarchy-rain.git --enable
+omarchy plugin add https://github.com/davidmessenger123/omarchy-rain.git --enable
 ```
 
 The bar asks where to place the wand; `omarchy bar move davidjm.rain -s right`
