@@ -45,6 +45,24 @@
         "description": "Continuous speed controlling the effect's motion. Non-integer in practice (the slider writes e.g. 1.02)."
       },
       {
+        "key": "fps",
+        "type": "integer",
+        "label": "Framerate",
+        "min": 15,
+        "max": 60,
+        "step": 1,
+        "defaultValue": 60,
+        "description": "Frames per second the effect animates at. Lower = less GPU work, choppier motion. Applies to every effect."
+      },
+      {
+        "key": "quality",
+        "type": "enum",
+        "label": "Resolution",
+        "options": ["0.5", "1", "1.5", "2"],
+        "defaultValue": "1",
+        "description": "Render scale relative to native resolution: 0.5x = a quarter of the pixels (softer, far cheaper), 1x = native, 2x = supersampled. Increments of 0.5x. Applies to every effect."
+      },
+      {
         "key": "lightning",
         "type": "boolean",
         "label": "Lightning flashes",

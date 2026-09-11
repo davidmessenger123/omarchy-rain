@@ -30,6 +30,11 @@ BarWidget {
   property bool lightning: root.effective("lightning", true)
   property bool audio: root.effective("audio", false)
   property string effect: String(root.effective("effect", "Rain")) || "Rain"
+  // Render quality knobs, applied globally to every effect. fps caps the
+  // animation's frame rate; quality scales the resolution the shader paints
+  // at (0.5x = a quarter of the pixels, 2x = supersampled).
+  property real fps: Number(root.effective("fps", 60)) || 60
+  property real quality: Number(root.effective("quality", 1)) || 1
 
   // Effect catalogue. `effectIds` maps every catalogue key to the shader's
   // uEffect switch; `implementedEffects` lists the ones that actually render
@@ -67,6 +72,8 @@ BarWidget {
   // through the shell's live patch (see persistSettings -> onSettingsChanged).
   property real densityPreview: -1
   property real speedPreview: -1
+  property real fpsPreview: -1
+  property real qualityPreview: -1
 
   // Active lightning strike: amount (0..1, animated with a flicker), the
   // per-strike seed/position/length that fix the bolt's shape for its short
@@ -112,6 +119,15 @@ BarWidget {
     return (e === undefined || e === null) ? fallback : e
   }
 
+  // Live value while a slider drags, persisted value once the shell patches it
+  // back through onSettingsChanged (which clears the preview).
+  function currentFps() {
+    return root.fpsPreview >= 0 ? root.fpsPreview : root.fps
+  }
+  function currentQuality() {
+    return root.qualityPreview >= 0 ? root.qualityPreview : root.quality
+  }
+
   function toggle() {
     root.raining = !root.raining
   }
@@ -122,6 +138,8 @@ BarWidget {
       root.keyNotice = ""
       root.densityPreview = -1
       root.speedPreview = -1
+      root.fpsPreview = -1
+      root.qualityPreview = -1
     }
   }
 
@@ -144,6 +162,8 @@ BarWidget {
   onSettingsChanged: {
     root.densityPreview = -1
     root.speedPreview = -1
+    root.fpsPreview = -1
+    root.qualityPreview = -1
   }
 
   function setDensity(value) {
@@ -154,6 +174,16 @@ BarWidget {
   function setSpeed(value) {
     root.persistSettings({ "speed": value })
     root.keyNotice = "Saved — speed " + Number(value).toFixed(2) + "."
+  }
+
+  function setFps(value) {
+    root.persistSettings({ "fps": value })
+    root.keyNotice = "Saved — framerate " + Number(value).toFixed(0) + " fps."
+  }
+
+  function setQuality(value) {
+    root.persistSettings({ "quality": value })
+    root.keyNotice = "Saved — resolution " + Number(value).toFixed(1) + "x."
   }
 
   function setLightning(on) {
@@ -190,15 +220,18 @@ BarWidget {
     configWriteProcess.running = true
   }
 
-  // Drives the shader's `time` uniform while the rain is visible. Keeping the
-  // surface hidden when off means the compositor never composites it.
+  // Drives the shader's `time` uniform while the rain is visible. The interval
+  // follows the `fps` setting (15-60), and `elapsed` advances by the *actual*
+  // per-tick seconds so a lower framerate slows the effect down, not the
+  // motion. Keeping the surface hidden when off means the compositor never
+  // composites it.
   Timer {
     id: ticker
-    interval: 16
+    interval: Math.max(1, Math.round(1000 / root.currentFps()))
     repeat: true
     running: root.raining
     onTriggered: {
-      root.elapsed = root.elapsed + 0.016
+      root.elapsed = root.elapsed + ticker.interval / 1000.0
       // Audio level: fast attack, slow release (target 0..1, boosted from the
       // sink's raw peak so moderate music still drives the aurora).
       var target = 0.0
@@ -390,6 +423,62 @@ BarWidget {
           }
         }
 
+        Text {
+          text: "FRAMERATE  ·  " + Math.round(root.currentFps()) + " fps"
+          color: Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.bold: true
+          Layout.alignment: Qt.AlignLeft
+          Layout.topMargin: Style.space(6)
+        }
+
+        PanelSlider {
+          id: fpsSlider
+          bar: root.bar
+          value: root.currentFps()
+          minimum: 15
+          maximum: 60
+          step: 1
+          tickCount: 4
+          Layout.fillWidth: true
+          Layout.topMargin: Style.space(2)
+          // Applies live while dragging (the ticker re-intervals instantly);
+          // the value is committed to shell.json on release.
+          onMoved: root.fpsPreview = value
+          onReleased: {
+            root.fpsPreview = value
+            root.setFps(Number(value.toFixed(0)))
+          }
+        }
+
+        Text {
+          text: "RESOLUTION  ·  " + root.currentQuality().toFixed(1) + "x native"
+          color: Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.bold: true
+          Layout.alignment: Qt.AlignLeft
+          Layout.topMargin: Style.space(6)
+        }
+
+        PanelSlider {
+          id: qualitySlider
+          bar: root.bar
+          value: root.currentQuality()
+          minimum: 0.5
+          maximum: 2.0
+          step: 0.5
+          tickCount: 4
+          Layout.fillWidth: true
+          Layout.topMargin: Style.space(2)
+          onMoved: root.qualityPreview = value
+          onReleased: {
+            root.qualityPreview = value
+            root.setQuality(Number(value.toFixed(1)))
+          }
+        }
+
         RowLayout {
           spacing: Style.space(10)
           Layout.topMargin: Style.space(4)
@@ -447,25 +536,49 @@ BarWidget {
     WlrLayershell.layer: WlrLayer.Background
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
-    ShaderEffect {
-      anchors.fill: parent
+    // --- effect render. The shader paints a full-screen FBO whose resolution
+    // is `quality` × the window's (0.5x = quarter the pixels), captured by
+    // ShaderEffectSource and stretched back over the whole screen by a cheap
+    // sampling pass (upscale.frag). At native scale this is a 1:1 copy; at
+    // 2x the effect is supersampled then downscaled for softer edges.
+    Item {
+      id: rainCanvas
+      width: Math.max(2, Math.round(rainWindow.width * root.currentQuality()))
+      height: Math.max(2, Math.round(rainWindow.height * root.currentQuality()))
       // uEffect selects the effect branch (0 = rain, 1 = snow, ... see the
       // effectIds map). `density` (1..3) and `speed` (0.5..3) are passed raw;
       // each effect derives its own parameters from them. While a panel slider
       // is being dragged, the preview values drive these for a live look, then
       // the persisted (and injected) values take over on release.
-      property vector2d uRes: Qt.vector2d(width, height)
-      property real time: root.elapsed
-      property real uIntensity: root.densityPreview >= 0 ? root.densityPreview : root.density
-      property real uSpeed: root.speedPreview >= 0 ? root.speedPreview : root.speed
-      property real uFlash: root.flash
-      property real uStrike: root.strike
-      property real uStrikeSeed: root.strikeSeed
-      property vector2d uStrikePos: Qt.vector2d(root.strikeX, root.strikeLen)
-      property real uEffect: root.effectIds[root.effect] !== undefined ? root.effectIds[root.effect] : 0
-      property real uAudio: root.audioLevel
+      ShaderEffect {
+        id: rainFx
+        anchors.fill: parent
+        property vector2d uRes: Qt.vector2d(width, height)
+        property real time: root.elapsed
+        property real uIntensity: root.densityPreview >= 0 ? root.densityPreview : root.density
+        property real uSpeed: root.speedPreview >= 0 ? root.speedPreview : root.speed
+        property real uFlash: root.flash
+        property real uStrike: root.strike
+        property real uStrikeSeed: root.strikeSeed
+        property vector2d uStrikePos: Qt.vector2d(root.strikeX, root.strikeLen)
+        property real uEffect: root.effectIds[root.effect] !== undefined ? root.effectIds[root.effect] : 0
+        property real uAudio: root.audioLevel
+        vertexShader: Qt.resolvedUrl("rain.vert.qsb")
+        fragmentShader: Qt.resolvedUrl("rain.frag.qsb")
+      }
+    }
+    ShaderEffectSource {
+      id: rainCapture
+      sourceItem: rainCanvas
+      live: true
+      hideSource: true
+    }
+    ShaderEffect {
+      id: rainOutput
+      anchors.fill: parent
+      property variant source: rainCapture
       vertexShader: Qt.resolvedUrl("rain.vert.qsb")
-      fragmentShader: Qt.resolvedUrl("rain.frag.qsb")
+      fragmentShader: Qt.resolvedUrl("upscale.frag.qsb")
     }
   }
 
