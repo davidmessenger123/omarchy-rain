@@ -213,7 +213,7 @@ BarWidget {
 
   function persistSettings(changes) {
     configWriteProcess.command = [
-      "python3",
+      "/usr/bin/python3",
       root.pluginDir + "/write_settings.py",
       JSON.stringify(changes)
     ]

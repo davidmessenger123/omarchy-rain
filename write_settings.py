@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """Merge parameters into the widget's entry in shell.json.
 
 Widget parameters live as FLAT keys on the layout entry (like stock widgets,
@@ -13,7 +13,7 @@ settings changed it patches live widgets in place, so a successful run updates
 the running rain without rebuilding anything.
 
 Usage:
-    python3 write_settings.py '{"density": 3}'            # merge these keys
+    /usr/bin/python3 write_settings.py '{"density": 3}'   # merge these keys
 
 Security: config-write boundary. The config path may sit under influenceable
 directory state, so this helper:
