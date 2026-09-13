@@ -30,6 +30,12 @@ BarWidget {
   property bool lightning: root.effective("lightning", true)
   property bool audio: root.effective("audio", false)
   property string effect: String(root.effective("effect", "Rain")) || "Rain"
+  // Sub-variant for the Falling Leaves effect (see the variantKeys catalogue).
+  property string variant: String(root.effective("variant", "autumn")) || "autumn"
+  // Light-source corner for the Light Shafts effect (see cornerKeys).
+  property string corner: String(root.effective("corner", "tl")) || "tl"
+  // Ray straightness for Light Shafts: 0 = wavy, 1 = subtle, 2 = straight.
+  property real straightness: Number(root.effective("straightness", 1.0)) || 1.0
   // Render quality knobs, applied globally to every effect. fps caps the
   // animation's frame rate; quality scales the resolution the shader paints
   // at (0.5x = a quarter of the pixels, 2x = supersampled).
@@ -39,33 +45,63 @@ BarWidget {
   // Effect catalogue. `effectIds` maps every catalogue key to the shader's
   // uEffect switch; `implementedEffects` lists the ones that actually render
   // and grows as effects ship, so the menu only offers built effects.
-  readonly property var effectKeys: ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Leaves", "Aurora"]
+  readonly property var effectKeys: ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Leaves", "Aurora", "Embers", "Bubbles", "Confetti", "Caustics", "Light Shafts"]
   readonly property var effectLabels: {
     "Rain": "Rain", "Snow": "Snowfall", "Ripples": "Puddle Ripples",
     "Dust": "Dust Motes", "Fireflies": "Fireflies",
-    "Leaves": "Falling Leaves", "Aurora": "Aurora"
+    "Leaves": "Falling Leaves", "Aurora": "Aurora",
+    "Embers": "Embers",
+    "Bubbles": "Bubbles", "Confetti": "Confetti", "Caustics": "Caustic Light",
+    "Light Shafts": "Light Shafts"
   }
   readonly property var effectIds: {
     "Rain": 0, "Snow": 1, "Ripples": 2, "Dust": 3,
-    "Fireflies": 4, "Leaves": 5, "Aurora": 6
+    "Fireflies": 4, "Leaves": 5, "Aurora": 6,
+    "Embers": 9, "Bubbles": 10,
+    "Confetti": 11, "Caustics": 12, "Light Shafts": 13
   }
   readonly property var settingsTitles: {
     "Rain": "RAIN SETTINGS", "Snow": "SNOWFALL SETTINGS", "Ripples": "PUDDLE RIPPLE SETTINGS",
     "Dust": "DUST MOTES SETTINGS", "Fireflies": "FIREFLY SETTINGS",
-    "Leaves": "FALLING LEAVES SETTINGS", "Aurora": "AURORA SETTINGS"
+    "Leaves": "FALLING LEAVES SETTINGS", "Aurora": "AURORA SETTINGS",
+    "Embers": "EMBER SETTINGS",
+    "Bubbles": "BUBBLE SETTINGS", "Confetti": "CONFETTI SETTINGS", "Caustics": "CAUSTIC SETTINGS",
+    "Light Shafts": "LIGHT SHAFT SETTINGS"
   }
   readonly property var intensityLabels: {
     "Rain": "INTENSITY", "Snow": "DENSITY", "Ripples": "RAIN INTENSITY",
     "Dust": "AMOUNT", "Fireflies": "AMOUNT",
-    "Leaves": "DENSITY", "Aurora": "BRIGHTNESS"
+    "Leaves": "DENSITY", "Aurora": "BRIGHTNESS",
+    "Embers": "AMOUNT",
+    "Bubbles": "AMOUNT", "Confetti": "DENSITY", "Caustics": "BRIGHTNESS",
+    "Light Shafts": "BRIGHTNESS"
   }
   readonly property var speedLabels: {
     "Rain": "RAINFALL SPEED", "Snow": "SNOWFALL SPEED", "Ripples": "RAIN SPEED",
     "Dust": "FLOAT SPEED", "Fireflies": "DRIFT SPEED",
-    "Leaves": "FALL SPEED", "Aurora": "MOTION SPEED"
+    "Leaves": "FALL SPEED", "Aurora": "MOTION SPEED",
+    "Embers": "EMBER RISE SPEED",
+    "Bubbles": "BUBBLE RISE SPEED", "Confetti": "CONFETTI FALL SPEED", "Caustics": "CAUSTIC MOTION SPEED",
+    "Light Shafts": "LIGHT SHAFT MOTION"
   }
   readonly property var rainyEffects: ["Rain"]
-  readonly property var implementedEffects: ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Leaves", "Aurora"]
+  readonly property var implementedEffects: [
+    "Rain", "Snow", "Ripples", "Dust", "Fireflies", "Leaves", "Aurora", "Embers", "Bubbles", "Confetti", "Caustics", "Light Shafts"
+  ]
+
+  // Leaf style variants for the Falling Leaves effect. `variantKeys` maps each
+  // catalogue key to the shader's uVariant switch; the menu only offers these.
+  readonly property var variantKeys: ["autumn", "cherry"]
+  readonly property var variantLabels: {
+    "autumn": "Autumn Leaves", "cherry": "Cherry Blossom"
+  }
+
+  // Light-source corners for the Light Shafts effect. `cornerKeys` maps each
+  // choice to the shader's uCorner switch; the menu only offers these.
+  readonly property var cornerKeys: ["tl", "tr", "bl", "br"]
+  readonly property var cornerLabels: {
+    "tl": "Top-left", "tr": "Top-right", "bl": "Bottom-left", "br": "Bottom-right"
+  }
 
   // While a settings slider is being dragged, the preview values drive the
   // shader immediately; they clear when the persisted settings come back
@@ -74,6 +110,7 @@ BarWidget {
   property real speedPreview: -1
   property real fpsPreview: -1
   property real qualityPreview: -1
+  property real straightnessPreview: -1
 
   // Active lightning strike: amount (0..1, animated with a flicker), the
   // per-strike seed/position/length that fix the bolt's shape for its short
@@ -84,7 +121,7 @@ BarWidget {
   property real strikeLen: 0.6
 
   property bool settingsOpen: false
-  property bool raining: false
+  property bool raining: Boolean(root.effective("running", false))
   property real elapsed: 0.0
   property real flash: 0.0
   property real audioLevel: 0.0
@@ -130,6 +167,7 @@ BarWidget {
 
   function toggle() {
     root.raining = !root.raining
+    root.persistSettings({ "running": root.raining })
   }
 
   function toggleSettings() {
@@ -140,6 +178,7 @@ BarWidget {
       root.speedPreview = -1
       root.fpsPreview = -1
       root.qualityPreview = -1
+      root.straightnessPreview = -1
     }
   }
 
@@ -164,6 +203,7 @@ BarWidget {
     root.speedPreview = -1
     root.fpsPreview = -1
     root.qualityPreview = -1
+    root.straightnessPreview = -1
   }
 
   function setDensity(value) {
@@ -199,6 +239,21 @@ BarWidget {
   function setEffect(e) {
     root.persistSettings({ "effect": e })
     root.keyNotice = "Saved — effect " + root.effectLabels[e] + "."
+  }
+
+  function setVariant(v) {
+    root.persistSettings({ "variant": v })
+    root.keyNotice = "Saved — style " + root.variantLabels[v] + "."
+  }
+
+  function setCorner(k) {
+    root.persistSettings({ "corner": k })
+    root.keyNotice = "Saved — light from " + root.cornerLabels[k] + "."
+  }
+
+  function setStraightness(value) {
+    root.persistSettings({ "straightness": value })
+    root.keyNotice = "Saved — straightness " + Number(value).toFixed(1) + "."
   }
 
   function fireStrike() {
@@ -368,6 +423,71 @@ BarWidget {
           Layout.fillWidth: true
           Layout.topMargin: Style.space(2)
           onChanged: root.setEffect(value)
+        }
+
+        Dropdown {
+          id: variantDropdown
+          label: "STYLE"
+          visible: root.effect === "Leaves"
+          options: {
+            var o = []
+            for (var i = 0; i < root.variantKeys.length; i++) {
+              var k = root.variantKeys[i]
+              o.push({ "value": k, "label": root.variantLabels[k] })
+            }
+            return o
+          }
+          value: root.variant
+          Layout.fillWidth: true
+          Layout.topMargin: Style.space(2)
+          onChanged: root.setVariant(value)
+        }
+
+        Dropdown {
+          id: cornerDropdown
+          label: "CORNER"
+          visible: root.effect === "Light Shafts"
+          options: {
+            var o = []
+            for (var i = 0; i < root.cornerKeys.length; i++) {
+              var k = root.cornerKeys[i]
+              o.push({ "value": k, "label": root.cornerLabels[k] })
+            }
+            return o
+          }
+          value: root.corner
+          Layout.fillWidth: true
+          Layout.topMargin: Style.space(2)
+          onChanged: root.setCorner(value)
+        }
+
+        Text {
+          text: "STRAIGHTNESS  ·  " + Math.round((root.straightnessPreview >= 0 ? root.straightnessPreview : root.straightness) * 10) / 10
+          color: Color.foreground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          font.bold: true
+          Layout.alignment: Qt.AlignLeft
+          Layout.topMargin: Style.space(6)
+          visible: root.effect === "Light Shafts"
+        }
+
+        PanelSlider {
+          id: straightnessSlider
+          bar: root.bar
+          value: root.straightness
+          minimum: 0.0
+          maximum: 2.0
+          step: 0.1
+          tickCount: 3
+          visible: root.effect === "Light Shafts"
+          Layout.fillWidth: true
+          Layout.topMargin: Style.space(2)
+          onMoved: root.straightnessPreview = value
+          onReleased: {
+            root.straightnessPreview = value
+            root.setStraightness(Number(value.toFixed(1)))
+          }
         }
 
         Text {
@@ -563,6 +683,9 @@ BarWidget {
         property vector2d uStrikePos: Qt.vector2d(root.strikeX, root.strikeLen)
         property real uEffect: root.effectIds[root.effect] !== undefined ? root.effectIds[root.effect] : 0
         property real uAudio: root.audioLevel
+        property real uVariant: root.variant === "cherry" ? 1 : 0
+        property real uCorner: root.corner === "tr" ? 1 : (root.corner === "bl" ? 2 : (root.corner === "br" ? 3 : 0))
+        property real uStraightness: root.straightnessPreview >= 0 ? root.straightnessPreview : root.straightness
         vertexShader: Qt.resolvedUrl("rain.vert.qsb")
         fragmentShader: Qt.resolvedUrl("rain.frag.qsb")
       }

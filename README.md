@@ -38,14 +38,21 @@ and the wallpaper untouched.
 | `Ripples` | Rain landing on water: expanding puddle rings |
 | `Dust` | Barely-moving motes drifting through a faint diagonal light shaft |
 | `Fireflies` | Warm-green points of light wandering and blinking at dusk |
-| `Leaves` | Autumn leaves tumbling down through warm golden light |
-| `Aurora` | Undulating northern-lights curtains over a starry night sky |
+| `Leaves` | Autumn leaves tumbling down through warm golden light, or Cherry Blossom via the STYLE sub-menu |
+| `Aurora` | Undulating northern-lights curtains over a starry night sky (optional audio-reactive) |
+| `Embers` | Warm fire sparks drifting up from below, flickering as they rise |
+| `Bubbles` | Clear round bubbles rising from the bottom edge, each with a bright rim |
+| `Confetti` | Small bright paper rectangles fluttering down in a light crosswind |
+| `Caustics` | Shimmering underwater light-web, like light on a shallow pool bed |
+| `Light Shafts` | Sunbeams streaming from a chosen corner (CORNER sub-menu, STRAIGHTNESS slider) |
 
 ## Settings
 
-**Right-click the wand for a settings menu**: an effect switch, an
-**intensity slider** (relabeled per effect, 1 = light to 3 = heavy), a
-**speed slider**, a **framerate slider** (15–60 fps), a **resolution slider**
+**Right-click the wand for a settings menu**: an effect switch, a **STYLE**
+sub-menu for Falling Leaves (autumn or cherry blossom), a **CORNER** sub-menu
+and **STRAIGHTNESS** slider for Light Shafts, an **intensity slider**
+(relabeled per effect, 1 = light to 3 = heavy), a **speed slider**, a
+**framerate slider** (15–60 fps), a **resolution slider**
 (0.5x–2x native, in 0.5x steps), a **lightning** toggle for the rain-based
 effects, and an **audio reactive** toggle for the aurora (it swells and
 shimmers with what you play). Sliders preview live while you drag and commit
@@ -56,7 +63,10 @@ widget, so no editor or restart is needed. Framerate and resolution apply to
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `effect` | string | `"Rain"` | `Rain`, `Snow`, `Ripples`, `Dust`, `Fireflies`, `Leaves`, `Aurora` |
+| `effect` | string | `"Rain"` | `Rain`, `Snow`, `Ripples`, `Dust`, `Fireflies`, `Leaves`, `Aurora`, `Embers`, `Bubbles`, `Confetti`, `Caustics`, `Light Shafts` |
+| `variant` | string | `"autumn"` | Falling Leaves: `autumn` or `cherry` |
+| `corner` | string | `"tl"` | Light Shafts: `tl`, `tr`, `bl`, `br` source corner |
+| `straightness` | number | `1` | Light Shafts: 0 (wavy) to 2 (ruler-straight) |
 | `density` | number | `2` | 1 (light) to 3 (heavy); per-effect meaning |
 | `speed` | number | `1` | 0.5 (lazy) to 3 (fast) effect motion |
 | `fps` | number | `60` | Animation framerate, 15–60 (lower = less GPU, choppier) |

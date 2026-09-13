@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "davidjm.rain",
   "name": "Rain",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "David JM",
   "license": "MIT",
   "description": "Background effects over the desktop wallpaper, behind your windows. Toggled from the bar: a GPU shader paints animated scenes on a full-screen background layer.",
@@ -12,7 +12,7 @@
   },
   "barWidget": {
     "displayName": "BackgroundFX",
-    "description": "A wand icon that paints animated effects over the desktop wallpaper, behind every window. Pick an effect: rain with lightning, snowfall, puddle ripples, floating dust, fireflies, falling leaves, or an aurora. Click to toggle; right-click for the effect switch plus continuous intensity and speed sliders. Effects render on a background layer behind every window, so your apps stay on top.",
+    "description": "A wand icon that paints animated effects over the desktop wallpaper, behind every window. Pick an effect: rain with lightning, snowfall, puddle ripples, floating dust, fireflies, falling leaves (autumn or cherry blossom), an aurora, or light shafts from a chosen corner. Click to toggle; right-click for the effect switch, leaf-style and corner sub-menus, continuous intensity and speed sliders. Effects render on a background layer behind every window, so your apps stay on top.",
     "category": "Effects",
     "allowMultiple": true,
     "schema": [
@@ -20,9 +20,35 @@
         "key": "effect",
         "type": "enum",
         "label": "Effect",
-        "options": ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Leaves", "Aurora"],
+        "options": ["Rain", "Snow", "Ripples", "Dust", "Fireflies", "Leaves", "Aurora", "Embers", "Bubbles", "Confetti", "Caustics", "Light Shafts"],
         "defaultValue": "Rain",
         "description": "The background effect painted over the wallpaper."
+      },
+      {
+        "key": "variant",
+        "type": "enum",
+        "label": "Leaf style",
+        "options": ["autumn", "cherry"],
+        "defaultValue": "autumn",
+        "description": "Falling Leaves effect: the same tumbling leaves, recolored — autumn rust/gold, or cherry blossom white/pink."
+      },
+      {
+        "key": "corner",
+        "type": "enum",
+        "label": "Light source corner",
+        "options": ["tl", "tr", "bl", "br"],
+        "defaultValue": "tl",
+        "description": "Light Shafts effect: which corner the shafts stream from — top-left, top-right, bottom-left, or bottom-right."
+      },
+      {
+        "key": "straightness",
+        "type": "integer",
+        "label": "Straightness",
+        "min": 0,
+        "max": 2,
+        "step": 1,
+        "defaultValue": 1,
+        "description": "Light Shafts effect: how straight the beams are — 0 = wavering and curving, 1 = subtly bowed (default), 2 = ruler-straight. Non-integer in practice (the slider writes e.g. 1.3)."
       },
       {
         "key": "density",

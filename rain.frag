@@ -16,6 +16,9 @@ layout(std140, binding = 0) uniform buf {
     vec2 uStrikePos;
     float uEffect;
     float uAudio;
+    float uVariant;
+    float uCorner;
+    float uStraightness;
 };
 
 float hash(vec2 p)
@@ -134,11 +137,88 @@ float fireflyLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float d
     return max(core * 0.9 + halo * 0.35, 0.0) * pulse;
 }
 
-// One falling-leaf layer. Every cell carries a single leaf drifting down the
-// screen on its own path: a gentle horizontal sway plus a sideways rock that
-// makes it tumble edge-on now and then. Each leaf is an elongated ellipse in
-// an autumn palette picked per cell, darkening when seen edge-on. `drift`
-// streams the whole layer horizontally so the wind visibly carries the fall.
+// One ember layer: a sparse drifting fire spark that rises slowly, sways on
+// its way up, and flickers with its own two-tone brightness. `drift` is a
+// horizontal offset in pixels that streams the whole field sideways like a
+// breeze, `size` scales the glow, and `seed` scatters the cells.
+float emberLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drift)
+{
+    vec2 gp = p + vec2(drift, 0.0);
+    vec2 sc = gp / cell;
+    vec2 sg = floor(sc);
+    vec2 sf = fract(sc);
+    vec2 rs = hash2(sg + seed);
+    // Rise slowly, each ember at its own pace, wrapping back in at the top.
+    float fy = fract(rs.y * 6.7 - flow * (0.12 + 0.28 * rs.x));
+    float fx = 0.5 + (rs.x - 0.5) * 0.5
+             + 0.25 * sin(flow * (0.35 + 0.5 * rs.y) + rs.x * 5.1)
+             + 0.12 * sin(flow * (0.9 + 0.4 * rs.x) + rs.y * 4.3);
+    vec2 fl = vec2(fx, fy);
+    vec2 dpx = (sf - fl) * cell;
+    float d = length(dpx);
+    float halo = 1.0 - smoothstep(size * 0.5, size * 2.6, d);
+    float core = 1.0 - smoothstep(0.0, size * 0.5, d);
+    // Two-tone flicker: the ember pulses and occasionally flares.
+    float flicker = 0.5 + 0.5 * sin(flow * (1.2 + 1.6 * rs.y) + rs.x * 6.28);
+    flicker *= 0.7 + 0.3 * sin(flow * (3.1 + 2.4 * rs.x) + rs.y * 11.3);
+    return max(core * 0.98 + halo * 0.22, 0.0) * flicker;
+}
+
+// One bubble field: the screen width is tiled into wide cells, each carrying
+// `count` bubbles. Vertically each bubble rises the *entire* screen, entering
+// at the bottom edge and leaving at the top, so there are no internal row
+// seams at all. Horizontally each bubble wanders freely and is sampled across
+// its own and both neighbouring cells, so the path stays continuous across
+// cell edges; the only wrap is horizontal, and a per-bubble fade masks it.
+// `size` sets the bubble radius, `rate` the rise speed, `drift` staggers the
+// cells sideways, and `seed` scatters them. Returns (rim+highlight
+// brightness, interior fill).
+vec2 bubbleLayer(vec2 p, float cellW, float count, float size, float rate, float flow, vec2 seed, float drift)
+{
+    float gp = p.x + drift;
+    float c0 = floor(gp / cellW);
+    vec3 best = vec3(1e20, 0.5, 0.0);
+    vec2 dvec = vec2(0.0);
+    for (int m = -1; m <= 1; m++) {
+        float c = c0 + float(m);
+        for (int k = 0; k < 10; k++) {
+            if (float(k) >= count) break;
+            vec2 rs = hash2(vec2(c * 91.33 + seed.x + float(k) * 17.71,
+                                seed.y + 4.7 + float(k) * 3.1));
+            // Horizontal wander; wraps across cell edges.
+            float w = 0.5 + (rs.x - 0.5) * 0.7
+                    + 0.18 * sin(flow * (0.30 + 0.25 * rs.y) + rs.x * 4.7);
+            float bx = fract(w);
+            // Rise the whole screen height: enter bottom, exit top.
+            float v = rate * (0.55 + 0.45 * rs.y);
+            float by = uRes.y * (1.0 - fract(rs.x * 7.31 + flow * v));
+            float sx = (c + bx) * cellW;
+            float dx = p.x - sx;
+            float dy = p.y - by;
+            float d2 = dx * dx + dy * dy;
+            if (d2 < best.x) {
+                best = vec3(d2, rs.y, bx);
+                dvec = vec2(dx, dy);
+            }
+        }
+    }
+    float d = sqrt(best.x);
+    // Fade only around the bubble's own horizontal wrap, never in stripes.
+    float bx = best.z;
+    float wrap = smoothstep(0.02, 0.07, bx) * (1.0 - smoothstep(0.93, 0.98, bx));
+    float wob = 0.8 + 0.4 * vnoise(vec2(best.y * 3.1, flow * 0.6));
+    float r = size * wob;
+    float m = 1.0 - smoothstep(r, r + 1.0, d);
+    float rim = smoothstep(r * 0.80, r * 0.97, d) * m;
+    vec2 hl = dvec - vec2(-r * 0.30, -r * 0.35);
+    float spot = 1.0 - smoothstep(0.0, r * 0.30, length(hl));
+    float fill = m * (1.0 - rim * 0.8) * 0.5;
+    return vec2((rim * 0.55 + spot * 0.45) * wrap, fill * wrap);
+}
+
+// One falling-leaf layer: an autumn leaf of `size` px that tumbles edge-on as
+// it crosses the whole screen. Particle identity comes from the lane hash, so
+// every leaf keeps its own palette for its whole descent.
 vec3 leafLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drift)
 {
     vec2 gp = p + vec2(drift, 0.0);
@@ -176,6 +256,48 @@ vec3 leafLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drift
                    vec3(0.90, 0.64, 0.18), smoothstep(0.15, 0.55, pal));
     col = mix(col, vec3(0.60, 0.20, 0.04), smoothstep(0.65, 0.90, pal));
     col *= 0.55 + 0.45 * abs(ca);
+    return col * max(a, 0.0);
+}
+
+// One confetti layer: small bright paper rectangles that flutter down a lane,
+// spinning as they fall and thinning out edge-on. Same full-screen fall as the
+// leaf layer; each piece carries its own festive colour and tumble.
+vec3 confettiLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drift)
+{
+    vec2 gp = p + vec2(drift, 0.0);
+    vec2 sc = gp / cell;
+    vec2 sg = floor(sc);
+    vec2 sf = fract(sc);
+    vec2 rs = hash2(sg + seed);
+    float fy = fract(rs.y * 4.7 + flow * (0.35 + 0.5 * rs.x));
+    float fx = 0.5 + (rs.x - 0.5) * 0.55
+             + 0.32 * sin(flow * (0.7 + 0.9 * rs.y) + rs.x * 5.9)
+             + 0.14 * sin(flow * (1.4 + 0.5 * rs.x) + rs.y * 3.7);
+    vec2 fl = vec2(fx, fy);
+    vec2 dpx = (sf - fl) * cell;
+
+    // Fast tumble about the piece's long axis, plus a slow flutter that thins
+    // the piece when it is seen edge-on.
+    float spin = flow * (3.0 + 3.2 * rs.y) + rs.x * 6.1;
+    float ca = cos(spin), sa = sin(spin);
+    vec2 rr = vec2(dpx.x * ca - dpx.y * sa, dpx.x * sa + dpx.y * ca);
+    float flap = sin(spin * 0.35 + rs.x * 4.1);
+    float W = size;
+    float H = max(size * 0.45, 0.9) * (0.30 + 0.70 * abs(flap));
+    float ex = abs(rr.x) / W;
+    float ey = abs(rr.y) / H;
+    float d = max(ex, ey);
+    float a = 1.0 - smoothstep(0.75, 1.10, d);
+    a *= 0.75 + 0.25 * vnoise(vec2(rs.x * 3.3, flow * 0.8 + rs.y * 2.3));
+    if (a <= 0.0) return vec3(0.0);
+
+    // Bright confetti palette: red, blue, gold, green, pink.
+    float pal = hash(sg * 0.4 + seed + vec2(5.1, 3.9));
+    vec3 col = mix(vec3(0.95, 0.22, 0.30), vec3(0.16, 0.70, 0.95), smoothstep(0.0, 0.25, pal));
+    col = mix(col, vec3(1.00, 0.80, 0.10), smoothstep(0.30, 0.50, pal));
+    col = mix(col, vec3(0.20, 0.85, 0.40), smoothstep(0.55, 0.70, pal));
+    col = mix(col, vec3(0.95, 0.50, 0.85), smoothstep(0.75, 0.90, pal));
+    col *= 0.65 + 0.35 * abs(flap);
     return col * max(a, 0.0);
 }
 
@@ -376,19 +498,36 @@ void main()
         return;
     }
 
-    // Falling leaves: three depth layers of autumn leaves tumbling down over a
-    // warm, slightly golden autumn light. Each leaf is a rotated ellipse in a
-    // warm palette that rocks side to side as it falls.
+    // Falling leaves: three depth layers of leaves tumbling down over a warm,
+    // slightly golden evening light. Each leaf is a rotated ellipse in a warm
+    // palette that rocks side to side as it falls. The variant switch only
+    // swaps the palette (autumn rust/gold vs cherry white/pink); the motion,
+    // depth, and behaviour are identical.
     if (uEffect > 4.5 && uEffect < 5.5) {
         float i = 1.0 + (uIntensity - 1.0) * 0.45;
         vec3 l1 = leafLayer(p, vec2(56.0, 88.0) / i, 4.0, flow, vec2(3.3, 7.2), flow * 4.0) * 0.5;
         vec3 l2 = leafLayer(p, vec2(110.0, 160.0) / i, 6.0, flow, vec2(8.1, 2.6), flow * 8.0) * 0.8;
         vec3 l3 = leafLayer(p, vec2(200.0, 300.0) / i, 9.0, flow, vec2(5.7, 9.0), flow * 13.0) * 1.0;
-        vec3 leaves = clamp(l1 + l2 + l3, 0.0, 1.2);
 
-        // Warm autumn light over the wallpaper; the leaves read as golden-red.
+        // Depth masks: each layer keeps its own shade after recoloring.
+        float m1 = length(l1);
+        float m2 = length(l2);
+        float m3 = length(l3);
+        vec3 leaves;
+        if (uVariant > 0.5) {
+            // Cherry blossom: the same tumbling leaves, recolored white-to-pink.
+            vec3 petal1 = vec3(1.00, 0.88, 0.93);
+            vec3 petal2 = vec3(0.96, 0.68, 0.80);
+            vec3 petal3 = vec3(0.86, 0.50, 0.66);
+            leaves = clamp(petal1 * m1 + petal2 * m2 + petal3 * m3, 0.0, 1.2);
+        } else {
+            leaves = clamp(l1 + l2 + l3, 0.0, 1.2);
+        }
+
         float lum = clamp(length(leaves), 0.0, 1.0);
-        vec3 col = vec3(0.82, 0.58, 0.30) * (0.25 + 0.45 * lum);
+        // Evening ambient light: golden for autumn, a soft blossom tinge for cherry.
+        vec3 amb = uVariant > 0.5 ? vec3(0.96, 0.88, 0.92) : vec3(0.82, 0.58, 0.30);
+        vec3 col = amb * (0.25 + 0.45 * lum);
         col += leaves * 1.15;
 
         float alpha = clamp(lum * 0.85 + 0.03, 0.0, 1.0);
@@ -446,6 +585,148 @@ void main()
         col += curtain * (band * 0.55 * i * (1.0 + 1.2 * react));
 
         float alpha = clamp(0.30 + band * 0.6 * (0.55 + 0.35 * i) * (1.0 + react), 0.0, 1.0);
+        fragColor = vec4(col, alpha * qt_Opacity);
+        return;
+    }
+
+    // Embers: sparse warm fire sparks drifting up from below the frame. Each is
+    // a tiny bright core with a soft halo that rises, sways, and flickers on
+    // its own. Intensity scales how many sparks hang in the air, speed how
+    // fast they climb. The base stays clear so the wallpaper reads through.
+    if (uEffect > 8.5 && uEffect < 9.5) {
+        float i = 1.0 + (uIntensity - 1.0) * 0.5;
+        float e1 = emberLayer(p, vec2(80.0, 110.0) / i, 2.4, flow, vec2(2.2, 9.4), flow * 0.6) * 0.7;
+        float e2 = emberLayer(p, vec2(150.0, 200.0) / i, 3.3, flow, vec2(6.3, 3.7), flow * 1.1) * 0.9;
+        float e3 = emberLayer(p, vec2(260.0, 340.0) / i, 4.35, flow, vec2(9.1, 6.2), flow * 1.7) * 1.0;
+        float embers = clamp(e1 + e2 + e3, 0.0, 1.1);
+
+        // Deep flame-ember orange, slightly yellow only in the hottest core.
+        vec3 glow = vec3(1.0, 0.42, 0.08);
+        vec3 hot = vec3(1.00, 0.72, 0.35);
+        vec3 col = mix(glow, hot, smoothstep(0.3, 0.9, embers)) * embers;
+        col *= 1.5;
+
+        float alpha = clamp(embers * 0.95 + 0.02, 0.0, 1.0);
+        fragColor = vec4(col, alpha * qt_Opacity);
+        return;
+    }
+
+    // Bubbles: clear round bubbles rising through the water, each with a bright
+    // rim and a specular highlight. The interior stays mostly clear so the
+    // wallpaper shows through each bubble. Intensity scales how many bubbles
+    // hang in the water, speed how fast they rise.
+    if (uEffect > 9.5 && uEffect < 10.5) {
+        float i = 1.0 + (uIntensity - 1.0) * 0.5;
+        // Static stagger between layers — never a flow-scaled drift.
+        vec2 b1 = bubbleLayer(p, 560.0 / i, 4.0, 9.0, 0.16, flow, vec2(4.2, 8.8), 0.0);
+        vec2 b2 = bubbleLayer(p, 860.0 / i, 5.0, 14.0, 0.12, flow, vec2(6.1, 3.3), 9.0);
+        vec2 b3 = bubbleLayer(p, 1250.0 / i, 6.0, 20.0, 0.09, flow, vec2(9.3, 5.1), 20.0);
+
+        float vis = clamp(b1.x * 0.8 + b2.x * 0.9 + b3.x, 0.0, 1.5);
+        float fill = clamp(b1.y * 0.8 + b2.y * 0.9 + b3.y, 0.0, 1.4);
+
+        // Bright near-white rim and highlight over a faint cool tinted interior.
+        vec3 col = vec3(0.90, 0.96, 1.0) * vis * 1.15;
+        col += vec3(0.55, 0.75, 0.88) * fill * 0.35;
+
+        float alpha = clamp((vis + fill) * 0.85, 0.0, 1.0);
+        fragColor = vec4(col, alpha * qt_Opacity);
+        return;
+    }
+
+    // Confetti: small bright paper rectangles fluttering down in a light
+    // crosswind, spinning and thinning as they fall. Intensity scales how many
+    // pieces are in the air, speed how fast they drop.
+    if (uEffect > 10.5 && uEffect < 11.5) {
+        float i = 1.0 + (uIntensity - 1.0) * 0.45;
+        vec3 c1 = confettiLayer(p, vec2(48.0, 80.0) / i, 3.0, flow, vec2(6.6, 4.4), flow * 3.0) * 0.55;
+        vec3 c2 = confettiLayer(p, vec2(96.0, 140.0) / i, 4.6, flow, vec2(2.2, 8.1), flow * 6.0) * 0.8;
+        vec3 c3 = confettiLayer(p, vec2(170.0, 250.0) / i, 6.8, flow, vec2(9.4, 3.1), flow * 10.0) * 1.0;
+        vec3 confetti = clamp(c1 + c2 + c3, 0.0, 1.2);
+
+        float lum = clamp(length(confetti), 0.0, 1.0);
+        // Faint cool backdrop so bright pieces pop, never a bright wash.
+        vec3 col = vec3(0.10, 0.13, 0.22) * (0.18 + 0.25 * lum);
+        col += confetti * 1.15;
+
+        float alpha = clamp(lum * 0.8 + 0.05, 0.0, 1.0);
+        fragColor = vec4(col, alpha * qt_Opacity);
+        return;
+    }
+
+    // Caustics: the shifting light web you see on the bed of a shallow pool.
+    // Three travelling waves cross to build a network of bright arcs that
+    // shimmer and drift; the gaps stay clear so the wallpaper reads through.
+    if (uEffect > 11.5 && uEffect < 12.5) {
+        float b = 0.85 * (0.7 + (uIntensity - 1.0) * 0.4);
+        vec2 q = p * 0.011 + vec2(13.0, 7.0);
+        float t = flow * 0.9;
+        // A mild warp makes the web bow and drift instead of sitting on a grid.
+        q += 0.35 * vec2(vnoise(q * 1.4 + vec2(0.0, t * 0.6)),
+                         vnoise(q * 1.4 + vec2(5.0, t * 0.6)));
+        float a = sin(q.x * 1.7 + 2.1 * sin(q.y + t) + t);
+        float c = sin(q.y * 1.3 + 1.9 * sin(q.x * 0.9 + t * 1.2) + t * 0.8);
+        float e = sin((q.x + q.y) * 1.1 + 2.3 * sin((q.x - q.y) * 0.8 + t * 0.6) + t * 1.4);
+        float web = a * c * e;
+        web *= web;
+        web = pow(web, 2.0);
+
+        // Sunlit water light over a faint cold undertone.
+        vec3 col = vec3(0.45, 0.85, 1.00) * web * (1.6 * b);
+        col += vec3(0.08, 0.16, 0.30) * b * 0.5;
+
+        float alpha = clamp(web * b + 0.02, 0.0, 1.0);
+        fragColor = vec4(col, alpha * qt_Opacity);
+        return;
+    }
+
+    // Light Shafts: a fan of warm light beams streaming from a chosen corner of
+    // the screen, like sunbeams falling through haze. uCorner picks the source
+    // (0 TL, 1 TR, 2 BL, 3 BR), intensity lifts the brightness, and speed
+    // steers how the beams sway and shimmer.
+    if (uEffect > 12.5 && uEffect < 13.5) {
+        float b = 0.7 * (0.6 + (uIntensity - 1.0) * 0.35);
+
+        vec2 c = vec2(0.0);
+        vec2 diag = vec2(1.0, 1.0);
+        if (uCorner >= 0.5 && uCorner < 1.5) {
+            c = vec2(uRes.x, 0.0); diag = vec2(-1.0, 1.0);
+        } else if (uCorner >= 1.5 && uCorner < 2.5) {
+            c = vec2(0.0, uRes.y); diag = vec2(1.0, -1.0);
+        } else if (uCorner >= 2.5) {
+            c = vec2(uRes.x, uRes.y); diag = vec2(-1.0, -1.0);
+        }
+        diag = normalize(diag);
+
+        vec2 dv = p - c;
+        float dist = length(dv);
+        float d = atan(diag.y, diag.x);
+        float da = atan(dv.y, dv.x) - d;
+        da = atan(sin(da), cos(da));
+
+        // Bend the ray angles gently so beams curve like light through haze.
+        // Straighter (higher uStraightness) beams bend and sway less.
+        float wa = clamp(0.55 - 0.35 * uStraightness, 0.0, 0.6);
+        float tadv = flow * mix(0.06, 0.015, clamp(wa / 0.55, 0.0, 1.0));
+        float warp = wa * (vnoise(dv * 0.0018 + vec2(0.0, tadv)) - 0.5) * 2.0;
+        float spread = 1.0 - smoothstep(0.28, 1.30, abs(da + warp));
+
+        // Narrow alternating wedges across the fan.
+        float beams = 0.5 + 0.5 * cos((da + warp) * 29.0);
+        beams = pow(max(beams, 0.0), 1.8);
+
+        // Brightest near the corner, fading out across the screen.
+        float far = max(uRes.x, uRes.y);
+        float fade = 1.0 - smoothstep(0.35, 1.05, dist / far);
+
+        float shimmer = 0.8 + 0.2 * vnoise(vec2(dist * 0.004, flow * 0.08));
+
+        float light = beams * spread * fade * shimmer;
+
+        // Warm golden daylight.
+        vec3 col = vec3(1.00, 0.94, 0.82) * light * (1.5 * b);
+
+        float alpha = clamp(light * b + 0.03, 0.0, 1.0);
         fragColor = vec4(col, alpha * qt_Opacity);
         return;
     }
