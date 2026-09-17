@@ -266,11 +266,24 @@ BarWidget {
     strikeAnim.start()
   }
 
+  // Config writes are serialized: two script invocations in flight would race
+  // inside shell.json, and a second `changes` object would be dropped outright.
+  // Queue the pending writes and pump one at a time (atomic in write_settings.py).
+  property var writeQueue: []
+
   function persistSettings(changes) {
+    root.writeQueue = root.writeQueue.concat([changes])
+    root.pumpConfigWrite()
+  }
+
+  function pumpConfigWrite() {
+    if (configWriteProcess.running || root.writeQueue.length === 0) return
+    var next = root.writeQueue[0]
+    root.writeQueue = root.writeQueue.slice(1)
     configWriteProcess.command = [
       "/usr/bin/python3",
       root.pluginDir + "/write_settings.py",
-      JSON.stringify(changes)
+      JSON.stringify(next)
     ]
     configWriteProcess.running = true
   }
@@ -665,18 +678,19 @@ BarWidget {
       id: rainCanvas
       width: Math.max(2, Math.round(rainWindow.width * root.currentQuality()))
       height: Math.max(2, Math.round(rainWindow.height * root.currentQuality()))
-      // uEffect selects the effect branch (0 = rain, 1 = snow, ... see the
+// uEffect selects the effect branch (0 = rain, 1 = snow, ... see the
       // effectIds map). `density` (1..3) and `speed` (0.5..3) are passed raw;
       // each effect derives its own parameters from them. While a panel slider
       // is being dragged, the preview values drive these for a live look, then
-      // the persisted (and injected) values take over on release.
+      // the persisted (and injected) values take over on release. Values are
+      // clamped so a hand-edited shell.json can't push the shader into NaN.
       ShaderEffect {
         id: rainFx
         anchors.fill: parent
         property vector2d uRes: Qt.vector2d(width, height)
         property real time: root.elapsed
-        property real uIntensity: root.densityPreview >= 0 ? root.densityPreview : root.density
-        property real uSpeed: root.speedPreview >= 0 ? root.speedPreview : root.speed
+        property real uIntensity: Math.max(0.1, Math.min(3.0, root.densityPreview >= 0 ? root.densityPreview : root.density))
+        property real uSpeed: Math.max(0.01, Math.min(20.0, root.speedPreview >= 0 ? root.speedPreview : root.speed))
         property real uFlash: root.flash
         property real uStrike: root.strike
         property real uStrikeSeed: root.strikeSeed
@@ -685,7 +699,7 @@ BarWidget {
         property real uAudio: root.audioLevel
         property real uVariant: root.variant === "cherry" ? 1 : 0
         property real uCorner: root.corner === "tr" ? 1 : (root.corner === "bl" ? 2 : (root.corner === "br" ? 3 : 0))
-        property real uStraightness: root.straightnessPreview >= 0 ? root.straightnessPreview : root.straightness
+        property real uStraightness: Math.max(0.0, Math.min(1.0, root.straightnessPreview >= 0 ? root.straightnessPreview : root.straightness))
         vertexShader: Qt.resolvedUrl("rain.vert.qsb")
         fragmentShader: Qt.resolvedUrl("rain.frag.qsb")
       }
@@ -711,5 +725,6 @@ BarWidget {
   Process {
     id: configWriteProcess
     running: false
+    onExited: root.pumpConfigWrite()
   }
 }

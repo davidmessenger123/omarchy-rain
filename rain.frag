@@ -62,7 +62,11 @@ float snowLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drif
     float sway = 0.75 + 0.5 * vnoise(vec2(sg.x * 0.7 + seed.x, flow * 0.35 + seed.y));
     vec2 fl = vec2(fx, fy);
     vec2 dpx = (sf - fl) * cell;
-    float dist = length(dpx) / max(0.5 * size * sway, 1.0);
+    // Exact pixel cull: past the 1.15 falloff the flake contributes nothing.
+    float denom = max(0.5 * size * sway, 1.0);
+    float lim = 1.15 * denom;
+    if (dot(dpx, dpx) > lim * lim) return 0.0;
+    float dist = length(dpx) / denom;
     float a = 1.0 - smoothstep(0.4, 1.15, dist);
     a *= 0.55 + 0.45 * vnoise(vec2(rs.x * 3.3, flow * 1.4));
     return max(a, 0.0);
@@ -107,7 +111,12 @@ float dustLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float drif
              + 0.20 * sin(flow * (0.07 + 0.17 * rs.y) + rs.x * 4.2);
     vec2 fl = vec2(fx, fy);
     vec2 dpx = (sf - fl) * cell;
-    float dist = length(dpx) / max(0.35 * size, 1.0);
+    // Exact pixel cull: beyond the falloff radius the mote contributes nothing,
+    // so skip the sqrt/smoothstep (and the second noise) entirely.
+    float denom = max(0.35 * size, 1.0);
+    float lim = 1.20 * denom;
+    if (dot(dpx, dpx) > lim * lim) return 0.0;
+    float dist = length(dpx) / denom;
     float a = 1.0 - smoothstep(0.30, 1.20, dist);
     a *= 0.6 + 0.4 * vnoise(vec2(rs.x * 2.3, flow * 0.3));
     return max(a, 0.0);
@@ -130,6 +139,8 @@ float fireflyLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float d
              + 0.18 * sin(flow * (0.12 + 0.24 * rs.x) + rs.y * 7.1 + 2.0);
     vec2 fl = vec2(fx, fy);
     vec2 dpx = (sf - fl) * cell;
+    float lim = size * 2.5;
+    if (dot(dpx, dpx) > lim * lim) return 0.0;
     float d = length(dpx);
     float halo = 1.0 - smoothstep(size * 0.5, size * 2.5, d);
     float core = 1.0 - smoothstep(0.0, size * 0.45, d);
@@ -155,6 +166,8 @@ float emberLayer(vec2 p, vec2 cell, float size, float flow, vec2 seed, float dri
              + 0.12 * sin(flow * (0.9 + 0.4 * rs.x) + rs.y * 4.3);
     vec2 fl = vec2(fx, fy);
     vec2 dpx = (sf - fl) * cell;
+    float lim = size * 2.6;
+    if (dot(dpx, dpx) > lim * lim) return 0.0;
     float d = length(dpx);
     float halo = 1.0 - smoothstep(size * 0.5, size * 2.6, d);
     float core = 1.0 - smoothstep(0.0, size * 0.5, d);
@@ -179,8 +192,18 @@ vec2 bubbleLayer(vec2 p, float cellW, float count, float size, float rate, float
     float c0 = floor(gp / cellW);
     vec3 best = vec3(1e20, 0.5, 0.0);
     vec2 dvec = vec2(0.0);
+    // A bubble's falloff reaches at most (max radius + 1) px, with max radius
+    // size * 1.2 (wobble tops out at 1.2). Cull a neighbour cell exactly when
+    // the pixel lies further than that from the cell's horizontal span.
+    float reach = size * 1.2 + 1.0;
     for (int m = -1; m <= 1; m++) {
         float c = c0 + float(m);
+        float cellMin = c * cellW;
+        float cellMax = cellMin + cellW;
+        float edge = 0.0;
+        if (p.x < cellMin) edge = cellMin - p.x;
+        else if (p.x > cellMax) edge = p.x - cellMax;
+        if (edge >= reach) continue;
         for (int k = 0; k < 10; k++) {
             if (float(k) >= count) break;
             vec2 rs = hash2(vec2(c * 91.33 + seed.x + float(k) * 17.71,
@@ -319,7 +342,9 @@ float rainLayer(vec2 p, vec2 cell, float th, float fast, float flow, vec2 seed)
 
     float px = f.x - 0.5 - xoff;
     float y = fract(f.y - flow * fast * speed + phase);
-    float head = pow(1.0 - clamp(y * cell.y / max(len, 1.0), 0.0, 1.0), 1.9);
+    // Quadratic fit of pow(hv, 1.9) (max err ~0.005 on [0,1]): one mul, no pow.
+    float hv = 1.0 - clamp(y * cell.y / max(len, 1.0), 0.0, 1.0);
+    float head = hv * (0.072 + 0.928 * hv);
 
     float distx = abs(px * cell.x);
     float col = smoothstep(th, 0.0, distx);
@@ -352,16 +377,43 @@ vec2 boltPoint(int i, vec2 start, float lenPx, float ampPx, float seed)
 
 float lightningBolt(vec2 p, vec2 start, float lenPx, float ampPx, float seed)
 {
-    float d = 1e12;
-    for (int i = 1; i <= 8; i++) {
-        d = min(d, segDistSq(p, boltPoint(i - 1, start, lenPx, ampPx, seed),
-                                boltPoint(i, start, lenPx, ampPx, seed)));
+    // The bolt's polyline is fixed for the whole flash, but until now every
+    // fragment re-derived each point twice (once per shared endpoint). Resolve
+    // all 9 joints once into a local array, then reuse them for the distance
+    // scan and the side branch.
+    vec2 pts[9];
+    for (int i = 0; i <= 8; i++) {
+        pts[i] = boltPoint(i, start, lenPx, ampPx, seed);
     }
-    // One short side branch off the third joint.
-    vec2 br = boltPoint(3, start, lenPx, ampPx, seed);
+    vec2 br = pts[3];
     float bdx = (hash(vec2(seed + 91.0, 3.3)) - 0.5) * ampPx * 1.6;
     float bdy = lenPx * 0.16;
-    d = min(d, segDistSq(p, br, br + vec2(bdx, bdy)));
+    vec2 branchEnd = br + vec2(bdx, bdy);
+
+    // Exact screen-space cull using the bolt's own bounding box expanded by the
+    // glow's visibility distance: beyond ~92 px the exp glow is < 1/255, so the
+    // pixel can't see the bolt (or its glow) at all. These reach the outline
+    // box only while a strike is live, and then skip the whole scan.
+    vec2 bmin = pts[0];
+    vec2 bmax = pts[0];
+    for (int i = 1; i <= 8; i++) {
+        bmin = min(bmin, pts[i]);
+        bmax = max(bmax, pts[i]);
+    }
+    bmin = min(bmin, branchEnd);
+    bmax = max(bmax, branchEnd);
+    float pad = 92.0;
+    if (p.x < bmin.x - pad || p.x > bmax.x + pad ||
+        p.y < bmin.y - pad || p.y > bmax.y + pad) {
+        return 1e12;
+    }
+
+    float d = 1e12;
+    for (int i = 1; i <= 8; i++) {
+        d = min(d, segDistSq(p, pts[i - 1], pts[i]));
+    }
+    // One short side branch off the third joint.
+    d = min(d, segDistSq(p, br, branchEnd));
     return d;
 }
 
@@ -669,7 +721,7 @@ void main()
         float e = sin((q.x + q.y) * 1.1 + 2.3 * sin((q.x - q.y) * 0.8 + t * 0.6) + t * 1.4);
         float web = a * c * e;
         web *= web;
-        web = pow(web, 2.0);
+        web *= web;
 
         // Sunlit water light over a faint cold undertone.
         vec3 col = vec3(0.45, 0.85, 1.00) * web * (1.6 * b);
@@ -688,21 +740,23 @@ void main()
         float b = 0.7 * (0.6 + (uIntensity - 1.0) * 0.35);
 
         vec2 c = vec2(0.0);
-        vec2 diag = vec2(1.0, 1.0);
+        // atan2 of the corner diagonal is fixed per corner, so resolve it to a
+        // constant instead of a normalize + atan2 in every fragment.
+        float d = 0.7853982; // atan2(1, 1)
         if (uCorner >= 0.5 && uCorner < 1.5) {
-            c = vec2(uRes.x, 0.0); diag = vec2(-1.0, 1.0);
+            c = vec2(uRes.x, 0.0); d = 2.3561945; // atan2(1, -1)
         } else if (uCorner >= 1.5 && uCorner < 2.5) {
-            c = vec2(0.0, uRes.y); diag = vec2(1.0, -1.0);
+            c = vec2(0.0, uRes.y); d = -0.7853982; // atan2(-1, 1)
         } else if (uCorner >= 2.5) {
-            c = vec2(uRes.x, uRes.y); diag = vec2(-1.0, -1.0);
+            c = vec2(uRes.x, uRes.y); d = -2.3561945; // atan2(-1, -1)
         }
-        diag = normalize(diag);
 
         vec2 dv = p - c;
         float dist = length(dv);
-        float d = atan(diag.y, diag.x);
         float da = atan(dv.y, dv.x) - d;
-        da = atan(sin(da), cos(da));
+        // atan(sin,cos) is just the angle folded into [-PI,PI]; a mod is exact
+        // and saves a second atan2 on every pixel.
+        da = mod(da + 3.1415927, 6.2831853) - 3.1415927;
 
         // Bend the ray angles gently so beams curve like light through haze.
         // Straighter (higher uStraightness) beams bend and sway less.
