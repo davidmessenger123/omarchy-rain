@@ -347,7 +347,7 @@ float rainLayer(vec2 p, vec2 cell, float th, float fast, float flow, vec2 seed)
     float head = hv * (0.072 + 0.928 * hv);
 
     float distx = abs(px * cell.x);
-    float col = smoothstep(th, 0.0, distx);
+    float col = 1.0 - smoothstep(0.0, th, distx);
     return col * head;
 }
 
@@ -457,7 +457,7 @@ void main()
             float ampPx = 0.03 * uRes.x;
             float d = lightningBolt(p, start, lenPx, ampPx, uStrikeSeed);
             float dist = sqrt(max(d, 0.0));
-            float core = smoothstep(1.4, 0.0, dist);
+            float core = 1.0 - smoothstep(0.0, 1.4, dist);
             float glow = exp(-dist * 0.06) * 0.5;
             boltAlpha = (core + glow) * uStrike;
             col += vec3(0.72, 0.82, 1.0) * boltAlpha;

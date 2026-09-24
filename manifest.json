@@ -12,10 +12,17 @@
   },
   "barWidget": {
     "displayName": "BackgroundFX",
-    "description": "A wand icon that paints animated effects over the desktop wallpaper, behind every window. Pick an effect: rain with lightning, snowfall, puddle ripples, floating dust, fireflies, falling leaves (autumn or cherry blossom), an aurora, or light shafts from a chosen corner. Click to toggle; right-click for the effect switch, leaf-style and corner sub-menus, continuous intensity and speed sliders. Effects render on a background layer behind every window, so your apps stay on top.",
+    "description": "A wand icon that paints animated effects over the desktop wallpaper, behind every window. Pick rain with lightning, snowfall, puddle ripples, floating dust, fireflies, falling leaves, aurora, embers, bubbles, confetti, caustics, or light shafts. Click to toggle; right-click for effect, intensity, speed, framerate, and resolution settings. Effects render on a background layer behind every window, so your apps stay on top.",
     "category": "Effects",
     "allowMultiple": true,
     "schema": [
+      {
+        "key": "running",
+        "type": "boolean",
+        "label": "Effect running",
+        "defaultValue": false,
+        "description": "Whether the background effect is currently active. Clicking the wand toggles this value."
+      },
       {
         "key": "effect",
         "type": "enum",
@@ -42,33 +49,33 @@
       },
       {
         "key": "straightness",
-        "type": "integer",
+        "type": "number",
         "label": "Straightness",
         "min": 0,
         "max": 2,
-        "step": 1,
+        "step": 0.1,
         "defaultValue": 1,
-        "description": "Light Shafts effect: how straight the beams are — 0 = wavering and curving, 1 = subtly bowed (default), 2 = ruler-straight. Non-integer in practice (the slider writes e.g. 1.3)."
+        "description": "Light Shafts effect: how straight the beams are — 0 = wavering and curving, 1 = subtly bowed (default), 2 = ruler-straight."
       },
       {
         "key": "density",
-        "type": "integer",
+        "type": "number",
         "label": "Intensity",
         "min": 1,
         "max": 3,
-        "step": 1,
+        "step": 0.1,
         "defaultValue": 2,
-        "description": "Continuous intensity, 1 = light to 3 = heavy. Meaning per effect: rain intensity, snow density, leaf count, firefly amount, aurora brightness, dust amount. Non-integer in practice (the slider writes e.g. 2.4); the schema type is limited to integer for the editor."
+        "description": "Continuous intensity, 1 = light to 3 = heavy. Meaning per effect: rain intensity, snow density, leaf count, firefly amount, aurora brightness, dust amount."
       },
       {
         "key": "speed",
-        "type": "integer",
+        "type": "number",
         "label": "Speed",
-        "min": 1,
+        "min": 0.5,
         "max": 3,
-        "step": 1,
+        "step": 0.05,
         "defaultValue": 1,
-        "description": "Continuous speed controlling the effect's motion. Non-integer in practice (the slider writes e.g. 1.02)."
+        "description": "Continuous speed controlling the effect's motion, from 0.5 (slow) to 3 (fast)."
       },
       {
         "key": "fps",
@@ -82,11 +89,13 @@
       },
       {
         "key": "quality",
-        "type": "enum",
+        "type": "number",
         "label": "Resolution",
-        "options": ["0.5", "1", "1.5", "2"],
-        "defaultValue": "1",
-        "description": "Render scale relative to native resolution: 0.5x = a quarter of the pixels (softer, far cheaper), 1x = native, 2x = supersampled. Increments of 0.5x. Applies to every effect."
+        "min": 0.5,
+        "max": 2,
+        "step": 0.5,
+        "defaultValue": 1,
+        "description": "Render scale relative to native resolution: 0.5x = a quarter of the pixels (softer, far cheaper), 1x = native, 2x = supersampled. Very large windows are capped to protect the render budget. Applies to every effect."
       },
       {
         "key": "lightning",

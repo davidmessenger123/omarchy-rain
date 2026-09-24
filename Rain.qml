@@ -25,22 +25,30 @@ BarWidget {
   // value preferring injected settings and falling back to this widget's own
   // entry, with the defaults as a last resort. Rebinding on `settings` (via
   // setting()) plus `bar` (via selfEntry()) keeps the values live.
-  property real density: Number(root.effective("density", 2)) || 2
-  property real speed: Number(root.effective("speed", 1.0)) || 1.0
-  property bool lightning: root.effective("lightning", true)
-  property bool audio: root.effective("audio", false)
-  property string effect: String(root.effective("effect", "Rain")) || "Rain"
+  property real density: root.boundedNumber(root.effective("density", 2), 2, 1, 3)
+  property real speed: root.boundedNumber(root.effective("speed", 1.0), 1.0, 0.5, 3)
+  property bool lightning: root.effective("lightning", true) === true
+  property bool audio: root.effective("audio", false) === true
+  property string effect: root.validEffect(root.effective("effect", "Rain"))
   // Sub-variant for the Falling Leaves effect (see the variantKeys catalogue).
   property string variant: String(root.effective("variant", "autumn")) || "autumn"
   // Light-source corner for the Light Shafts effect (see cornerKeys).
   property string corner: String(root.effective("corner", "tl")) || "tl"
   // Ray straightness for Light Shafts: 0 = wavy, 1 = subtle, 2 = straight.
-  property real straightness: Number(root.effective("straightness", 1.0)) || 1.0
+  property real straightness: root.boundedNumber(root.effective("straightness", 1.0), 1.0, 0, 2)
   // Render quality knobs, applied globally to every effect. fps caps the
   // animation's frame rate; quality scales the resolution the shader paints
   // at (0.5x = a quarter of the pixels, 2x = supersampled).
-  property real fps: Number(root.effective("fps", 60)) || 60
-  property real quality: Number(root.effective("quality", 1)) || 1
+  property real fps: root.boundedNumber(root.effective("fps", 60), 60, 15, 60)
+  property real quality: root.boundedNumber(root.effective("quality", 1), 1, 0.5, 2)
+  readonly property int maxRenderPixels: 8294400
+  readonly property int maxRenderDimension: 8192
+  readonly property var safeProcessEnvironment: ({
+    "PATH": "/usr/bin:/bin",
+    "HOME": Quickshell.env("HOME"),
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8"
+  })
 
   // Effect catalogue. `effectIds` maps every catalogue key to the shader's
   // uEffect switch; `implementedEffects` lists the ones that actually render
@@ -121,53 +129,199 @@ BarWidget {
   property real strikeLen: 0.6
 
   property bool settingsOpen: false
-  property bool raining: Boolean(root.effective("running", false))
+  property var runningOverride: undefined
+  property bool raining: root.runningOverride === undefined
+    ? root.effective("running", false) === true
+    : root.runningOverride
+  property string instanceId: root.validInstanceId(root.effective("instanceId", ""))
   property real elapsed: 0.0
   property real flash: 0.0
   property real audioLevel: 0.0
   property string keyNotice: ""
+  property var settingsWriteQueue: []
+  property var activeSettingsWrite: null
+  property bool settingsProcessStopping: false
+  property int settingsWriteGeneration: 0
+  property string lastSettingsDiagnostic: ""
+  readonly property int maxSettingsWrites: 8
+  readonly property bool audioReactive: root.raining && root.audio && root.effect === "Aurora"
+  readonly property var renderDimensions: root.effectRenderSize()
 
   // Absolute path to this plugin's folder, resolved from the QML file itself so
   // settings persistence finds its neighbor write_settings.py wherever the
   // plugin lives.
-  readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
+  readonly property string pluginDir: {
+    var path = String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
+    return path.charAt(path.length - 1) === "/" ? path : path + "/"
+  }
 
   // This widget's live entry from the shell's layout config — the authoritative
   // copy of its parameters the bar is currently running with.
+  function boundedNumber(value, fallback, minimum, maximum) {
+    var number = Number(value)
+    if (!isFinite(number)) return fallback
+    return Math.max(minimum, Math.min(maximum, number))
+  }
+
+  function validEffect(value) {
+    var name = String(value || "Rain")
+    return root.implementedEffects.indexOf(name) >= 0 ? name : "Rain"
+  }
+
+  function validInstanceId(value) {
+    var text = String(value || "")
+    return /^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$/.test(text) ? text : ""
+  }
+
+  function ensureInstanceId() {
+    var existing = root.validInstanceId(root.instanceId)
+    if (existing) {
+      if (root.instanceId !== existing) root.instanceId = existing
+      return existing
+    }
+    var seed = String(root.moduleName || "rain").toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 48) || "rain"
+    var generated = seed + "-" + Date.now().toString(36) + "-" + Math.floor(Math.random() * 0x100000000).toString(36)
+    root.instanceId = generated
+    return generated
+  }
+
+  function hostEntry(item) {
+    return item && "entry" in item && "region" in item && item["entry"] &&
+      (item["entry"].id || "") === "davidjm.rain" ? item["entry"] : null
+  }
+
+  function ownEntry() {
+    var item = root.parent
+    while (item) {
+      var entry = root.hostEntry(item)
+      if (entry) return entry
+      item = item.parent
+    }
+    return root.selfEntry()
+  }
+
   function selfEntry() {
     var lc = root.bar ? root.bar.layoutConfig : null
     if (!lc) return null
+    var found = null
     for (var r = 0; r < 3; r++) {
       var region = ["left", "center", "right"][r]
       var list = lc[region]
       if (!list) continue
       for (var i = 0; i < list.length; i++) {
-        if (list[i] && (list[i].id || "") === "davidjm.rain") return list[i]
+        if (list[i] && (list[i].id || "") === "davidjm.rain") {
+          if (found) return null
+          found = list[i]
+        }
       }
     }
-    return null
+    return found
   }
 
   function effective(name, fallback) {
     var v = root.setting(name, undefined)
     if (v !== undefined && v !== null) return v
-    var entry = root.selfEntry()
+    var entry = root.ownEntry()
     var e = entry ? entry[name] : undefined
     return (e === undefined || e === null) ? fallback : e
+  }
+
+  function entrySelector() {
+    var instanceId = root.ensureInstanceId()
+    var layout = root.bar ? root.bar.layoutConfig : null
+    if (layout) {
+      var instanceMatches = []
+      for (var regionIndex = 0; regionIndex < 3; regionIndex++) {
+        var regionName = ["left", "center", "right"][regionIndex]
+        var regionEntries = layout[regionName]
+        if (!Array.isArray(regionEntries)) continue
+        for (var entryIndex = 0; entryIndex < regionEntries.length; entryIndex++) {
+          var candidate = regionEntries[entryIndex]
+          if (candidate && (candidate.id || "") === "davidjm.rain" && candidate.instanceId === instanceId) {
+            instanceMatches.push({ region: regionName, index: entryIndex, entry: candidate, instanceId: instanceId })
+          }
+        }
+      }
+      if (instanceMatches.length === 1) return instanceMatches[0]
+      if (instanceMatches.length > 1) return {}
+    }
+    var item = root.parent
+    while (item) {
+      var entry = root.hostEntry(item)
+      if (entry) {
+        var existingId = root.validInstanceId(entry.instanceId)
+        if (existingId) {
+          root.instanceId = existingId
+          instanceId = existingId
+        }
+        var region = item["region"]
+        var entries = layout && layout[region]
+        if (Array.isArray(entries)) {
+          var selectedIndex = -1
+          if (typeof item.index === "number" && item.index >= 0 && item.index < entries.length) {
+            if (JSON.stringify(entries[item.index]) === JSON.stringify(entry)) selectedIndex = item.index
+          }
+          if (selectedIndex < 0) {
+            var matchingIndexes = []
+            for (var i = 0; i < entries.length; i++) {
+              if (JSON.stringify(entries[i]) === JSON.stringify(entry)) matchingIndexes.push(i)
+            }
+            if (matchingIndexes.length === 1) selectedIndex = matchingIndexes[0]
+          }
+          if (selectedIndex >= 0) {
+            return { region: region, index: selectedIndex, entry: entry, instanceId: instanceId }
+          }
+        }
+      }
+      item = item.parent
+    }
+    var single = root.selfEntry()
+    if (single) {
+      for (var fallbackRegionIndex = 0; fallbackRegionIndex < 3; fallbackRegionIndex++) {
+        var fallbackRegion = ["left", "center", "right"][fallbackRegionIndex]
+        var fallbackEntries = layout ? layout[fallbackRegion] : null
+        if (!Array.isArray(fallbackEntries)) continue
+        for (var fallbackIndex = 0; fallbackIndex < fallbackEntries.length; fallbackIndex++) {
+          if (fallbackEntries[fallbackIndex] === single || JSON.stringify(fallbackEntries[fallbackIndex]) === JSON.stringify(single)) {
+            return { region: fallbackRegion, index: fallbackIndex, entry: single, instanceId: instanceId }
+          }
+        }
+      }
+    }
+    return {}
+  }
+
+  function effectRenderSize() {
+    var windowWidth = Number(rainWindow.width)
+    var windowHeight = Number(rainWindow.height)
+    if (!isFinite(windowWidth) || windowWidth <= 0) windowWidth = 2
+    if (!isFinite(windowHeight) || windowHeight <= 0) windowHeight = 2
+    var scale = root.currentQuality()
+    var width = Math.max(2, Math.min(root.maxRenderDimension, Math.round(windowWidth * scale)))
+    var height = Math.max(2, Math.min(root.maxRenderDimension, Math.round(windowHeight * scale)))
+    if (width * height > root.maxRenderPixels) {
+      var budgetScale = Math.sqrt(root.maxRenderPixels / (width * height))
+      width = Math.max(2, Math.min(root.maxRenderDimension, Math.floor(width * budgetScale)))
+      height = Math.max(2, Math.min(root.maxRenderDimension, Math.floor(height * budgetScale)))
+    }
+    return { width: width, height: height }
   }
 
   // Live value while a slider drags, persisted value once the shell patches it
   // back through onSettingsChanged (which clears the preview).
   function currentFps() {
-    return root.fpsPreview >= 0 ? root.fpsPreview : root.fps
+    return root.boundedNumber(root.fpsPreview >= 0 ? root.fpsPreview : root.fps, 60, 15, 60)
   }
   function currentQuality() {
-    return root.qualityPreview >= 0 ? root.qualityPreview : root.quality
+    return root.boundedNumber(root.qualityPreview >= 0 ? root.qualityPreview : root.quality, 1, 0.5, 2)
+  }
+  function currentStraightness() {
+    return root.boundedNumber(root.straightnessPreview >= 0 ? root.straightnessPreview : root.straightness, 1, 0, 2)
   }
 
   function toggle() {
-    root.raining = !root.raining
-    root.persistSettings({ "running": root.raining })
+    root.runningOverride = !root.raining
+    root.persistSettings({ "running": root.runningOverride })
   }
 
   function toggleSettings() {
@@ -199,6 +353,9 @@ BarWidget {
   // a released slider stops previewing and the bound (now-current) value takes
   // over with no visible jump.
   onSettingsChanged: {
+    if (root.runningOverride === undefined || root.effective("running", false) === root.runningOverride) {
+      root.runningOverride = undefined
+    }
     root.densityPreview = -1
     root.speedPreview = -1
     root.fpsPreview = -1
@@ -207,53 +364,51 @@ BarWidget {
   }
 
   function setDensity(value) {
-    root.persistSettings({ "density": value })
-    root.keyNotice = "Saved — intensity " + Number(value).toFixed(1) + "."
+    var number = root.boundedNumber(value, 2, 1, 3)
+    root.persistSettings({ "density": number }, "Saved — intensity " + number.toFixed(1) + ".")
   }
 
   function setSpeed(value) {
-    root.persistSettings({ "speed": value })
-    root.keyNotice = "Saved — speed " + Number(value).toFixed(2) + "."
+    var number = root.boundedNumber(value, 1, 0.5, 3)
+    root.persistSettings({ "speed": number }, "Saved — speed " + number.toFixed(2) + ".")
   }
 
   function setFps(value) {
-    root.persistSettings({ "fps": value })
-    root.keyNotice = "Saved — framerate " + Number(value).toFixed(0) + " fps."
+    var number = root.boundedNumber(value, 60, 15, 60)
+    root.persistSettings({ "fps": Math.round(number) }, "Saved — framerate " + Math.round(number) + " fps.")
   }
 
   function setQuality(value) {
-    root.persistSettings({ "quality": value })
-    root.keyNotice = "Saved — resolution " + Number(value).toFixed(1) + "x."
+    var number = root.boundedNumber(value, 1, 0.5, 2)
+    root.persistSettings({ "quality": number }, "Saved — resolution " + number.toFixed(1) + "x.")
   }
 
   function setLightning(on) {
-    root.persistSettings({ "lightning": on })
-    root.keyNotice = on ? "Saved — lightning on." : "Saved — lightning off."
+    root.persistSettings({ "lightning": on === true }, on ? "Saved — lightning on." : "Saved — lightning off.")
   }
 
   function setAudio(on) {
-    root.persistSettings({ "audio": on })
-    root.keyNotice = on ? "Saved — audio response on." : "Saved — audio response off."
+    root.persistSettings({ "audio": on === true }, on ? "Saved — audio response on." : "Saved — audio response off.")
   }
 
   function setEffect(e) {
-    root.persistSettings({ "effect": e })
-    root.keyNotice = "Saved — effect " + root.effectLabels[e] + "."
+    var effect = root.validEffect(e)
+    root.persistSettings({ "effect": effect }, "Saved — effect " + root.effectLabels[effect] + ".")
   }
 
   function setVariant(v) {
-    root.persistSettings({ "variant": v })
-    root.keyNotice = "Saved — style " + root.variantLabels[v] + "."
+    var variant = v === "cherry" ? "cherry" : "autumn"
+    root.persistSettings({ "variant": variant }, "Saved — style " + root.variantLabels[variant] + ".")
   }
 
   function setCorner(k) {
-    root.persistSettings({ "corner": k })
-    root.keyNotice = "Saved — light from " + root.cornerLabels[k] + "."
+    var corner = ["tl", "tr", "bl", "br"].indexOf(k) >= 0 ? k : "tl"
+    root.persistSettings({ "corner": corner }, "Saved — light from " + root.cornerLabels[corner] + ".")
   }
 
   function setStraightness(value) {
-    root.persistSettings({ "straightness": value })
-    root.keyNotice = "Saved — straightness " + Number(value).toFixed(1) + "."
+    var number = root.boundedNumber(value, 1, 0, 2)
+    root.persistSettings({ "straightness": number }, "Saved — straightness " + number.toFixed(1) + ".")
   }
 
   function fireStrike() {
@@ -266,26 +421,70 @@ BarWidget {
     strikeAnim.start()
   }
 
-  // Config writes are serialized: two script invocations in flight would race
-  // inside shell.json, and a second `changes` object would be dropped outright.
-  // Queue the pending writes and pump one at a time (atomic in write_settings.py).
-  property var writeQueue: []
-
-  function persistSettings(changes) {
-    root.writeQueue = root.writeQueue.concat([changes])
-    root.pumpConfigWrite()
+  function mergeSettingsOperations(previous, next) {
+    var merged = { changes: {}, successNotice: String(next.successNotice || "") }
+    var keys = ["changes"]
+    for (var operationIndex = 0; operationIndex < keys.length; operationIndex++) {
+      var source = previous[keys[operationIndex]]
+      for (var key in source) merged.changes[key] = source[key]
+    }
+    for (var nextKey in next.changes) merged.changes[nextKey] = next.changes[nextKey]
+    return merged
   }
 
-  function pumpConfigWrite() {
-    if (configWriteProcess.running || root.writeQueue.length === 0) return
-    var next = root.writeQueue[0]
-    root.writeQueue = root.writeQueue.slice(1)
+  function persistSettings(changes, successNotice) {
+    if (!changes || typeof changes !== "object" || Array.isArray(changes)) return
+    var normalized = {}
+    for (var key in changes) normalized[key] = changes[key]
+    normalized.instanceId = root.ensureInstanceId()
+    var operation = { changes: normalized, successNotice: String(successNotice || "") }
+    var pending = null
+    for (var queueIndex = 0; queueIndex < root.settingsWriteQueue.length && queueIndex < root.maxSettingsWrites; queueIndex++) {
+      pending = pending === null
+        ? root.settingsWriteQueue[queueIndex]
+        : root.mergeSettingsOperations(pending, root.settingsWriteQueue[queueIndex])
+    }
+    if (pending !== null) pending = root.mergeSettingsOperations(pending, operation)
+    else pending = operation
+    root.settingsWriteQueue = [pending]
+    root.keyNotice = "Saving…"
+    root.startSettingsWrite()
+  }
+
+  function startSettingsWrite() {
+    if (root.settingsProcessStopping || configWriteProcess.running || root.activeSettingsWrite !== null || root.settingsWriteQueue.length === 0) return
+    var operation = root.settingsWriteQueue[0]
+    root.settingsWriteQueue = root.settingsWriteQueue.slice(1)
+    root.settingsWriteGeneration++
+    operation.generation = root.settingsWriteGeneration
+    root.activeSettingsWrite = operation
+    root.lastSettingsDiagnostic = ""
     configWriteProcess.command = [
       "/usr/bin/python3",
-      root.pluginDir + "/write_settings.py",
-      JSON.stringify(next)
+      "-I",
+      root.pluginDir + "write_settings.py",
+      JSON.stringify(operation.changes),
+      JSON.stringify(root.entrySelector())
     ]
+    settingsWriteWatchdog.interval = 5000
+    settingsWriteWatchdog.restart()
     configWriteProcess.running = true
+  }
+
+  function timeoutSettingsWrite() {
+    if (!configWriteProcess.running || root.activeSettingsWrite === null) return
+    var operation = root.activeSettingsWrite
+    root.lastSettingsDiagnostic = "settings write timed out"
+    root.keyNotice = "Save timed out; retrying with newer settings."
+    root.settingsProcessStopping = true
+    root.activeSettingsWrite = null
+    root.settingsWriteGeneration++
+    configWriteProcess.running = false
+    var retry = { changes: {}, successNotice: operation.successNotice }
+    for (var key in operation.changes) retry.changes[key] = operation.changes[key]
+    if (root.settingsWriteQueue.length > 0) retry = root.mergeSettingsOperations(retry, root.settingsWriteQueue[0])
+    root.settingsWriteQueue = [retry]
+    console.warn("omarchy-rain settings: timeout for generation " + operation.generation)
   }
 
   // Drives the shader's `time` uniform while the rain is visible. The interval
@@ -298,18 +497,7 @@ BarWidget {
     interval: Math.max(1, Math.round(1000 / root.currentFps()))
     repeat: true
     running: root.raining
-    onTriggered: {
-      root.elapsed = root.elapsed + ticker.interval / 1000.0
-      // Audio level: fast attack, slow release (target 0..1, boosted from the
-      // sink's raw peak so moderate music still drives the aurora).
-      var target = 0.0
-      if (root.audio && root.effect === "Aurora") {
-        var peak = audioPeak.peak
-        target = peak > 0 ? Math.min(1.0, peak * 3.0) : 0.0
-      }
-      var k = target > root.audioLevel ? 0.35 : 0.06
-      root.audioLevel = root.audioLevel + (target - root.audioLevel) * k
-    }
+    onTriggered: root.elapsed = root.elapsed + ticker.interval / 1000.0
   }
 
   // Random lightning. Sometimes a distant storm front just flashes the sky,
@@ -349,13 +537,30 @@ BarWidget {
     onTriggered: root.flash = 0.0
   }
 
+  Timer {
+    id: audioTicker
+    interval: 33
+    repeat: true
+    running: root.audioReactive
+    onTriggered: {
+      var peak = Number(audioPeak.peak)
+      var target = isFinite(peak) && peak > 0 ? Math.min(1, peak * 3) : 0
+      var coefficient = target > root.audioLevel ? 0.45 : 0.12
+      root.audioLevel = root.audioLevel + (target - root.audioLevel) * coefficient
+    }
+  }
+
+  onAudioReactiveChanged: {
+    if (!root.audioReactive) root.audioLevel = 0
+  }
+
   // System audio monitoring for audio-reactive effects (Aurora). Reads the
   // default sink's per-frame peak; the ticker smooths it into `audioLevel`
   // with a fast attack and slow release so the aurora swells with the music.
   PwNodePeakMonitor {
     id: audioPeak
     node: Pipewire.defaultAudioSink
-    enabled: root.raining && root.audio
+    enabled: root.audioReactive
   }
 
   Behavior on flash {
@@ -475,7 +680,7 @@ BarWidget {
         }
 
         Text {
-          text: "STRAIGHTNESS  ·  " + Math.round((root.straightnessPreview >= 0 ? root.straightnessPreview : root.straightness) * 10) / 10
+          text: "STRAIGHTNESS  ·  " + Math.round(root.currentStraightness() * 10) / 10
           color: Color.foreground
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
@@ -488,7 +693,7 @@ BarWidget {
         PanelSlider {
           id: straightnessSlider
           bar: root.bar
-          value: root.straightness
+          value: root.currentStraightness()
           minimum: 0.0
           maximum: 2.0
           step: 0.1
@@ -668,6 +873,7 @@ BarWidget {
     WlrLayershell.namespace: "davidjm-rain"
     WlrLayershell.layer: WlrLayer.Background
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+    mask: Region {}
 
     // --- effect render. The shader paints a full-screen FBO whose resolution
     // is `quality` × the window's (0.5x = quarter the pixels), captured by
@@ -676,10 +882,10 @@ BarWidget {
     // 2x the effect is supersampled then downscaled for softer edges.
     Item {
       id: rainCanvas
-      width: Math.max(2, Math.round(rainWindow.width * root.currentQuality()))
-      height: Math.max(2, Math.round(rainWindow.height * root.currentQuality()))
-// uEffect selects the effect branch (0 = rain, 1 = snow, ... see the
-      // effectIds map). `density` (1..3) and `speed` (0.5..3) are passed raw;
+      width: root.renderDimensions.width
+      height: root.renderDimensions.height
+      // uEffect selects the effect branch (0 = rain, 1 = snow, ... see the
+      // effectIds map). `density` (1..3) and `speed` (0.5..3) are bounded;
       // each effect derives its own parameters from them. While a panel slider
       // is being dragged, the preview values drive these for a live look, then
       // the persisted (and injected) values take over on release. Values are
@@ -689,8 +895,8 @@ BarWidget {
         anchors.fill: parent
         property vector2d uRes: Qt.vector2d(width, height)
         property real time: root.elapsed
-        property real uIntensity: Math.max(0.1, Math.min(3.0, root.densityPreview >= 0 ? root.densityPreview : root.density))
-        property real uSpeed: Math.max(0.01, Math.min(20.0, root.speedPreview >= 0 ? root.speedPreview : root.speed))
+        property real uIntensity: root.boundedNumber(root.densityPreview >= 0 ? root.densityPreview : root.density, 1, 1, 3)
+        property real uSpeed: root.boundedNumber(root.speedPreview >= 0 ? root.speedPreview : root.speed, 1, 0.5, 3)
         property real uFlash: root.flash
         property real uStrike: root.strike
         property real uStrikeSeed: root.strikeSeed
@@ -699,7 +905,7 @@ BarWidget {
         property real uAudio: root.audioLevel
         property real uVariant: root.variant === "cherry" ? 1 : 0
         property real uCorner: root.corner === "tr" ? 1 : (root.corner === "bl" ? 2 : (root.corner === "br" ? 3 : 0))
-        property real uStraightness: Math.max(0.0, Math.min(1.0, root.straightnessPreview >= 0 ? root.straightnessPreview : root.straightness))
+        property real uStraightness: root.currentStraightness()
         vertexShader: Qt.resolvedUrl("rain.vert.qsb")
         fragmentShader: Qt.resolvedUrl("rain.frag.qsb")
       }
@@ -707,7 +913,7 @@ BarWidget {
     ShaderEffectSource {
       id: rainCapture
       sourceItem: rainCanvas
-      live: true
+      live: root.raining
       hideSource: true
     }
     ShaderEffect {
@@ -719,12 +925,43 @@ BarWidget {
     }
   }
 
+  Timer {
+    id: settingsWriteWatchdog
+    interval: 5000
+    repeat: false
+    onTriggered: root.timeoutSettingsWrite()
+  }
+
   // Persists settings to shell.json via the plugin's helper. Successful finds
   // are atomic (tmp + os.replace), which the shell's watched FileView picks up
   // and live-patches into this widget's `settings`.
   Process {
     id: configWriteProcess
+    clearEnvironment: true
+    environment: root.safeProcessEnvironment
     running: false
-    onExited: root.pumpConfigWrite()
+    stderr: StdioCollector {
+      id: settingsErrorCollector
+      waitForEnd: true
+      onStreamFinished: root.lastSettingsDiagnostic = String(settingsErrorCollector.text || "").slice(0, 2048)
+    }
+    onExited: function(exitCode) {
+      root.settingsProcessStopping = false
+      var operation = root.activeSettingsWrite
+      if (operation === null || operation.generation !== root.settingsWriteGeneration) {
+        Qt.callLater(root.startSettingsWrite)
+        return
+      }
+      settingsWriteWatchdog.stop()
+      root.activeSettingsWrite = null
+      if (exitCode === 0) {
+        root.keyNotice = operation.successNotice
+      } else {
+        root.keyNotice = "Could not save settings."
+        if ("running" in operation.changes) root.runningOverride = undefined
+        if (root.lastSettingsDiagnostic) console.warn("omarchy-rain settings: " + root.lastSettingsDiagnostic)
+      }
+      Qt.callLater(root.startSettingsWrite)
+    }
   }
 }
