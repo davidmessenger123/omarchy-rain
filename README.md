@@ -122,6 +122,37 @@ fields can be hand-edited too (flat keys, like the stock widgets):
   flickers `uStrike` 1 → 0 → 1 → 0 like a real bolt; the shader renders the
   jagged polyline and a soft sky glow, and a slow Behavior fade closes the flash.
 
+## Shaders
+
+The `.qsb` files are build artifacts. Re-bake them after touching `rain.vert`,
+`rain.frag`, or `upscale.frag`:
+
+```sh
+./bake-shaders.sh
+omarchy restart shell
+```
+
+The shell caches each `QShader` by path for the lifetime of the process, so
+saving a `.qsb` hot-reloads the QML but does **not** re-read the shader — a
+shell restart is required.
+
+`bake-shaders.sh` matters more than it looks. A baked shader only carries the
+GLSL versions passed to `qsb --glsl`, and Qt picks the closest match to whatever
+its RHI backend supports at runtime, so the target list has to cover every
+backend a user might land on:
+
+| Target | Covers |
+| --- | --- |
+| `440` | Vulkan, desktop GL 4.4 |
+| `320 es` | GL ES 3.x — what NVIDIA's EGL hands Qt on Wayland |
+
+Bake `440` alone and a GL ES machine still maps the layer surface, but every
+frame logs `No GLSL shader code found` followed by `Failed to build graphics
+pipeline state` and the effect is invisible. The symptom looks like a dead
+widget, not a shader problem. Adding a target is purely additive — existing
+entries are unchanged — so widening the list cannot regress a backend that
+already worked.
+
 ## Notes
 
 - Effects render behind windows, so fullscreen windows cover them entirely.
